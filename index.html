@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Check LicGeo — ferramentas WebSIG">
+<meta name="theme-color" content="#111318">
+<link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<title>Check LicGeo — Ferramentas WebSIG</title>
+
+<!-- Fontes -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap">
+
+<!-- Bibliotecas externas (mapa, projeções, EXIF, KML/KMZ, Shapefile) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/shpjs/4.0.4/shp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@5.8.1/dist/togeojson.umd.js"></script>
+
+<!-- Folha de estilos do aplicativo -->
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<a href="#main-content" class="skip-link">Pular para o conteúdo principal</a>
+
+<main id="main-content">
+
+<!-- ═══════════════════════════════════════
+     HOME
+════════════════════════════════════════ -->
+<div id="screen-home" class="screen active">
+  <button type="button" class="theme-btn-home" id="themeBtn0" title="Modo claro/escuro" aria-label="Alternar modo claro ou escuro" onclick="toggleTheme()">☀️</button>
+  <button type="button" class="theme-btn-home" id="colorBtn0" title="Cores" aria-label="Escolher cores do tema" style="right:64px" onclick="toggleColorPanel('cp0')">🎨</button>
+  <div class="color-panel" id="cp0"></div>
+  <div class="home-brand">
+    <div class="brand-mark">
+      <!--
+        ╔══════════════════════════════════════════════════════╗
+        ║  ÍCONE DA MARCA (logo do site)                       ║
+        ║  Arquivo: assets/logo.svg (mapa do Brasil + lupa)    ║
+        ║  Para trocar, substitua o arquivo logo.svg.          ║
+        ╚══════════════════════════════════════════════════════╝
+      -->
+      <div class="brand-icon" aria-hidden="true">
+        <img src="assets/logo.svg" alt="" width="40" height="40">
+      </div>
+      <span class="brand-name">Check LicGeo</span>
+    </div>
+    <p>Ferramentas WebSIG para checagem de dados geoespaciais oriundos do licenciamento ambiental — direto no seu navegador, sem necessidade de instalar complementos.</p>
+  </div>
+
+  <div class="home-cards">
+
+    <!--
+      ╔══════════════════════════════════════════════════════╗
+      ║  ÍCONES DOS CARDS DO MENU PRINCIPAL                 ║
+      ║  Localize as tags <span class="card-icon"> abaixo   ║
+      ║  Troque o emoji por qualquer outro, ou use:         ║
+      ║  <img src="icone.svg" style="width:40px">           ║
+      ╚══════════════════════════════════════════════════════╝
+    -->
+
+    <div class="home-card" role="button" tabindex="0" onclick="go('converter')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();go('converter')}" aria-label="Acessar ferramenta Converter Coordenadas">
+      <!-- ÍCONE CONVERTER: troque o emoji abaixo -->
+      <span class="card-icon">🔄</span>
+      <h2>Converter Coordenadas (SICG)</h2>
+      <p>Ferramenta para conversão de coordenadas UTM das fichas de sítios arqueológicos para latitude/longitude do SICG. Visualize o resultado no mapa e exporte em KML ou Shapefile para conferência no QGIS ou no Google Earth.</p>
+      <div class="card-cta">Acessar <span>→</span></div>
+    </div>
+
+    <div class="home-card" role="button" tabindex="0" onclick="go('extrair')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();go('extrair')}" aria-label="Acessar ferramenta Extrair Coordenadas">
+      <!-- ÍCONE EXTRAIR: troque o emoji abaixo -->
+      <span class="card-icon">📷</span>
+      <h2>Extrair Coordenadas</h2>
+      <p>Ferramenta para extração de coordenadas com GPS embutido nas fotos. O sistema extrai, converte para UTM, exibe em mapa interativo e exporta para conferência no QGIS ou no Google Earth. Funciona com envio individual ou em lote (pasta).</p>
+      <div class="card-cta">Acessar <span>→</span></div>
+    </div>
+
+    <div class="home-card" role="button" tabindex="0" onclick="go('informar')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();go('informar')}" aria-label="Acessar ferramenta Informar Coordenadas">
+      <!-- ÍCONE INFORMAR: troque o emoji abaixo -->
+      <span class="card-icon">📌</span>
+      <h2>Informar Coordenadas</h2>
+      <p>Ferramenta para inserção manual de coordenadas UTM impressas nas fotos ou importação de arquivos geoespaciais (kml/kmz ou shp). Visualize o resultado no mapa e exporte os pontos em KML ou Shapefile para conferência no QGIS ou no Google Earth.</p>
+      <div class="card-cta">Acessar <span>→</span></div>
+    </div>
+
+  </div>
+  <footer class="home-footer">
+    <p><strong>Check LicGeo</strong> reúne ferramentas WebSIG para apoiar a checagem de dados geoespaciais produzidos no licenciamento ambiental.</p>
+    <p>Possui dezenas de camadas WMS oficiais disponíveis, com pop-up de propriedades, escolha de cores e ferramenta de medição.</p>
+    <p>Todo o processamento (leitura de fotos, conversão de coordenadas, geração de KML/SHP) ocorre localmente no navegador.</p>    
+  </footer>
+</div>
+
+<!-- ═══════════════════════════════════════
+     TELA 1 — CONVERTER
+════════════════════════════════════════ -->
+<div id="screen-converter" class="screen">
+  <div class="page-header">
+    <button type="button" class="btn-back" onclick="go('home')">← Menu</button>
+    <div class="page-title">🔄 Converter Coordenadas — UTM → Lat/Long</div>
+    <button type="button" class="btn-clear" onclick="clearConverter()">🗑 Limpar</button>
+    <button type="button" class="theme-btn" id="colorBtn1" title="Cores" aria-label="Escolher cores do tema" onclick="toggleColorPanel('cp1')">🎨</button>
+    <button type="button" class="theme-btn" id="themeBtn" title="Modo claro/escuro" aria-label="Alternar modo claro ou escuro" onclick="toggleTheme()">☀️</button>
+  </div>
+  <div class="color-panel" id="cp1"></div>
+  <div id="conv-input-panel" class="upload-panel">
+    <div class="page-inner">
+      <div class="info-box">
+        <span class="info-title">🔄 Converter Coordenadas (UTM → Lat/Long)</span>
+        Esta ferramenta converte coordenadas <strong>UTM (Universal Transversa de Mercator)</strong> — informadas por Fuso, Zona, Este (E) e Norte (N) — para <strong>latitude e longitude</strong> no Datum <strong>SIRGAS2000</strong>, padrão oficial brasileiro. É voltada ao preenchimento de informações geoespaciais de sítios arqueológicos no <strong>SICG/IPHAN</strong>.
+        <ul>
+          <li><strong>Entrada em lote:</strong> adicione quantos pontos quiser e converta todos de uma vez.</li>
+          <li><strong>Visualização no mapa:</strong> os pontos aparecem sobre camadas oficiais (IPHAN, IBGE, FUNAI, ICMBio e outras).</li>
+          <li><strong>Tabela pronta para copiar:</strong> o painel esquerdo gera Lat/Lon prontos para colar nos campos do SICG.</li>
+          <li><strong>Exportação:</strong> baixe os pontos em <strong>KML</strong> (Google Earth) ou <strong>Shapefile</strong> (QGIS).</li>
+        </ul>
+        <span class="info-note">Dica: ao colar valores manualmente, o SICG aceita o símbolo de grau (º) automaticamente.</span>
+      </div>
+      <div class="section-label">Coordenadas UTM de entrada</div>
+      <div class="coord-rows" id="conv-rows"></div>
+      <button type="button" class="btn btn-sm" onclick="addConvRow()" style="margin-bottom:18px">＋ Adicionar coordenada</button>
+      <div class="btn-group">
+        <button type="button" class="btn btn-primary" onclick="convConvert()">⚙️ Converter e visualizar no mapa</button>
+      </div>
+    </div>
+  </div>
+  <div id="conv-split" class="split-body" style="display:none">
+    <div class="split-top-bar">
+      <div class="stat-chips">
+        <div class="stat-chip ok"><span class="n" id="conv-cnt">0</span><span>pontos convertidos</span></div>
+      </div>
+      <div style="flex:1"></div>
+      <button type="button" class="btn btn-sm" onclick="showConvInput()">✏️ Editar entradas</button>
+      <button type="button" class="btn btn-green btn-sm" onclick="downloadKML(convData,'coordenadas_convertidas')">⬇ Baixar KML</button>
+      <button type="button" class="btn btn-green btn-sm" onclick="downloadSHP(convData,'coordenadas_convertidas')">⬇ Baixar Shapefile</button>
+      <div class="btn-divider"></div>
+      <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('conv','file')">⬆ Importar KML/KMZ</button>
+      <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('conv','folder')">⬆ Importar Shapefile</button>
+      <button type="button" class="btn btn-sm" onclick="clearConverter()">🗑 Limpar</button>
+    </div>
+    <div class="split-pane">
+      <div class="pane-left">
+        <div class="pane-left-hdr">
+          <span>Resultado SIRGAS2000</span>
+          <span id="conv-pts-lbl" style="color:var(--muted);font-size:10px;font-weight:400">0 pts</span>
+        </div>
+        <div class="pane-scroll">
+          <table>
+            <thead><tr><th>#</th><th>Zona</th><th>Latitude°</th><th>Longitude°</th></tr></thead>
+            <tbody id="conv-tbody"></tbody>
+          </table>
+        </div>
+        <div class="geo-upload-panel" id="geoup-conv"></div>
+      </div>
+      <div class="pane-right">
+        <div class="map-wrap">
+          <div id="map-conv" style="width:100%;height:100%"></div>
+          <div class="layer-loading" id="loading-conv"><div class="spinner"></div><span>Carregando camada…</span></div>
+          <div class="measure-panel" id="measure-conv"></div>
+          <div class="measure-panel area-panel" id="area-conv"></div>
+          <div class="map-footer" id="footer-conv">
+            <div class="mf-item">📍 <span>Coordenadas:</span> <b id="coord-conv">—</b></div>
+            <div class="mf-sep"></div>
+            <div class="mf-item">📏 <span>Escala:</span> <b id="scale-conv">—</b></div>
+            <div class="mf-sep"></div>
+            <button type="button" class="mf-measure-btn" id="measureBtn-conv" onclick="openMeasurePopup('conv')">📐 Medir</button>
+            <button type="button" class="mf-measure-btn" id="areaBtn-conv" onclick="openAreaPopup('conv')" disabled title="Disponível quando houver polígono importado">📐 Área de polígono</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     TELA 2 — EXTRAIR
+════════════════════════════════════════ -->
+<div id="screen-extrair" class="screen">
+  <div class="page-header">
+    <button type="button" class="btn-back" onclick="go('home')">← Menu</button>
+    <div class="page-title">📷 Extrair Coordenadas das Fotos</div>
+    <button type="button" class="btn-clear" onclick="clearExtrair()">🗑 Limpar</button>
+    <button type="button" class="theme-btn" id="colorBtn2" title="Cores" aria-label="Escolher cores do tema" onclick="toggleColorPanel('cp2')">🎨</button>
+    <button type="button" class="theme-btn" id="themeBtn2" title="Modo claro/escuro" aria-label="Alternar modo claro ou escuro" onclick="toggleTheme()">☀️</button>
+  </div>
+  <div class="color-panel" id="cp2"></div>
+  <div id="ext-upload-panel" class="upload-panel">
+    <div class="page-inner" style="max-width:580px">
+      <div class="info-box">
+        <span class="info-title">📷 Extrair Coordenadas das Fotos</span>
+        Esta ferramenta lê automaticamente as coordenadas de <strong>GPS embutidas (metadados EXIF)</strong> em fotografias e as posiciona no mapa — útil para georreferenciar registros fotográficos de campo sem digitação manual.
+        <ul>
+          <li><strong>Envio individual ou em lote:</strong> selecione várias fotos ou uma pasta inteira (incluindo subpastas).</li>
+          <li><strong>Conversão automática:</strong> as coordenadas são convertidas para <strong>UTM/SIRGAS2000</strong>.</li>
+          <li><strong>Tabela detalhada:</strong> o painel esquerdo lista nome do arquivo, coordenadas, altitude e data/hora de cada foto.</li>
+          <li><strong>Exportação:</strong> baixe os pontos em <strong>KML</strong> ou <strong>Shapefile</strong> para conferência no QGIS ou Google Earth.</li>
+        </ul>
+        <span class="info-note">Formatos aceitos: JPG, JPEG, TIFF, HEIC, HEIF e WEBP. Fotos sem GPS são identificadas e contabilizadas à parte. Todo o processamento ocorre no seu navegador — nenhuma foto é enviada a servidores.</span>
+      </div>
+      <div class="section-label">Modo de envio</div>
+      <div class="toggle-bar">
+        <button type="button" id="tb-arquivo" class="active" onclick="setExtMode('arquivo')">📄 Arquivos</button>
+        <button type="button" id="tb-pasta" onclick="setExtMode('pasta')">📂 Pasta completa</button>
+      </div>
+      <div class="drop-zone" id="ext-dz">
+        <input type="file" id="ext-file-input" accept="image/*" multiple>
+        <div class="dz-icon">🖼️</div>
+        <div class="dz-title" id="ext-dz-title">Arraste as fotos aqui</div>
+        <div class="dz-sub">JPG · JPEG · TIF · TIFF · HEIC · WEBP</div>
+        <button type="button" class="btn btn-primary" style="margin-top:13px" onclick="document.getElementById('ext-file-input').click()">Selecionar arquivos</button>
+      </div>
+      <div class="progress-wrap" id="ext-progress">
+        <div class="progress-bg"><div class="progress-fill" id="ext-fill"></div></div>
+        <div class="progress-lbl" id="ext-label">Processando...</div>
+      </div>
+    </div>
+  </div>
+  <div id="ext-split" class="split-body" style="display:none">
+    <div class="split-top-bar">
+      <div class="stat-chips">
+        <div class="stat-chip ok"><span class="n" id="ext-cnt-ok">0</span><span>com GPS</span></div>
+        <div class="stat-chip warn"><span class="n" id="ext-cnt-warn">0</span><span>sem GPS</span></div>
+      </div>
+      <div style="flex:1"></div>
+      <button type="button" class="btn btn-green btn-sm" onclick="downloadKML(extData,'pontos_extraidos')">⬇ Baixar KML</button>
+      <button type="button" class="btn btn-green btn-sm" onclick="downloadSHP(extData,'pontos_extraidos')">⬇ Baixar Shapefile</button>
+      <div class="btn-divider"></div>
+      <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('ext','file')">⬆ Importar KML/KMZ</button>
+      <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('ext','folder')">⬆ Importar Shapefile</button>
+      <button type="button" class="btn btn-sm" onclick="clearExtrair()">🔄 Nova seleção</button>
+    </div>
+    <div class="split-pane">
+      <div class="pane-left">
+        <div class="pane-left-hdr">
+          <span>Pontos extraídos</span>
+          <span id="ext-total-lbl" style="color:var(--muted);font-size:10px;font-weight:400">0 pts</span>
+        </div>
+        <div class="pane-scroll">
+          <table>
+            <thead><tr><th>#</th><th>Arquivo</th><th>Zona</th><th>E (m)</th><th>N (m)</th><th>Altitude (m)</th><th>Data/Hora</th></tr></thead>
+            <tbody id="ext-tbody"></tbody>
+          </table>
+        </div>
+        <div class="geo-upload-panel" id="geoup-ext"></div>
+      </div>
+      <div class="pane-right">
+        <div class="map-wrap">
+          <div id="map-ext" style="width:100%;height:100%"></div>
+          <div class="layer-loading" id="loading-ext"><div class="spinner"></div><span>Carregando camada…</span></div>
+          <div class="measure-panel" id="measure-ext"></div>
+          <div class="measure-panel area-panel" id="area-ext"></div>
+          <div class="map-footer" id="footer-ext">
+            <div class="mf-item">📍 <span>Coordenadas:</span> <b id="coord-ext">—</b></div>
+            <div class="mf-sep"></div>
+            <div class="mf-item">📏 <span>Escala:</span> <b id="scale-ext">—</b></div>
+            <div class="mf-sep"></div>
+            <button type="button" class="mf-measure-btn" id="measureBtn-ext" onclick="openMeasurePopup('ext')">📐 Medir</button>
+            <button type="button" class="mf-measure-btn" id="areaBtn-ext" onclick="openAreaPopup('ext')" disabled title="Disponível quando houver polígono importado">📐 Área de polígono</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     TELA 3 — INFORMAR
+════════════════════════════════════════ -->
+<div id="screen-informar" class="screen">
+  <div class="page-header">
+    <button type="button" class="btn-back" onclick="go('home')">← Menu</button>
+    <div class="page-title">📌 Informar Coordenadas UTM / Importar Arquivos</div>
+    <button type="button" class="btn-clear" onclick="clearInformar()">🗑 Limpar</button>
+    <button type="button" class="theme-btn" id="colorBtn3" title="Cores" aria-label="Escolher cores do tema" onclick="toggleColorPanel('cp3')">🎨</button>
+    <button type="button" class="theme-btn" id="themeBtn3" title="Modo claro/escuro" aria-label="Alternar modo claro ou escuro" onclick="toggleTheme()">☀️</button>
+  </div>
+  <div class="color-panel" id="cp3"></div>
+  <div id="inf-input-panel" class="upload-panel">
+    <div class="page-inner">
+      <div class="info-box">
+        <span class="info-title">📌 Informar Coordenadas / Importar Arquivos</span>
+        Esta ferramenta oferece dois caminhos para visualizar dados no mapa: <strong>digitar coordenadas UTM manualmente</strong> (por exemplo, as impressas em fotos ou relatórios) <strong>ou</strong> <strong>importar arquivos geoespaciais</strong> já existentes.
+        <ul>
+          <li><strong>Entrada manual:</strong> informe Nome, Fuso, Zona, Este e Norte de cada ponto; o sistema converte e plota automaticamente.</li>
+          <li><strong>Importar KML/KMZ e Shapefile:</strong> visualize camadas de pontos, linhas e polígonos diretamente no mapa.</li>
+          <li><strong>Camadas importadas:</strong> aparecem no painel com ícone de tipologia (📍 ponto, ➖ linha, ⬛ polígono) e cor personalizável.</li>
+          <li><strong>Ferramentas do mapa:</strong> meça distâncias e calcule a área de polígonos importados (m², km² e hectares) pelos botões no rodapé.</li>
+          <li><strong>Exportação:</strong> pontos digitados podem ser baixados em KML ou Shapefile.</li>
+        </ul>
+        <span class="info-note">Shapefile deve ser enviado como pasta contendo os arquivos componentes (.shp, .shx, .dbf e, idealmente, .prj). Limite de 50 MB por envio.</span>
+      </div>
+      <div class="section-label">Pontos UTM</div>
+      <div class="coord-rows" id="inf-rows"></div>
+      <button type="button" class="btn btn-sm" onclick="addInfRow()" style="margin-bottom:18px">＋ Adicionar ponto</button>
+      <div class="btn-group" style="align-items:center">
+        <button type="button" class="btn btn-primary" onclick="saveInformar()">💾 Salvar e visualizar no mapa</button>
+        <span class="or-divider">ou</span>
+        <span class="import-group-label">Importar arquivo:</span>
+        <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('inf','file')">⬆ KML/KMZ</button>
+        <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('inf','folder')">⬆ Shapefile</button>
+      </div>
+    </div>
+  </div>
+  <div id="inf-split" class="split-body" style="display:none">
+    <div class="split-top-bar">
+      <div class="stat-chips">
+        <div class="stat-chip ok"><span class="n" id="inf-cnt">0</span><span>pontos informados</span></div>
+      </div>
+      <div style="flex:1"></div>
+      <button type="button" class="btn btn-sm" id="inf-edit-btn" onclick="showInfInput()">✏️ Editar pontos</button>
+      <button type="button" class="btn btn-green btn-sm" id="inf-dl-kml" onclick="downloadKML(infData,'pontos_informados')">⬇ Baixar KML</button>
+      <button type="button" class="btn btn-green btn-sm" id="inf-dl-shp" onclick="downloadSHP(infData,'pontos_informados')">⬇ Baixar Shapefile</button>
+      <div class="btn-divider" id="inf-dl-divider"></div>
+      <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('inf','file')">⬆ Importar KML/KMZ</button>
+      <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('inf','folder')">⬆ Importar Shapefile</button>
+      <button type="button" class="btn btn-sm" onclick="clearInformar()">🗑 Limpar</button>
+    </div>
+    <div class="split-pane">
+      <div class="pane-left">
+        <div class="pane-left-hdr">
+          <span>Pontos registrados</span>
+          <span id="inf-pts-lbl" style="color:var(--muted);font-size:10px;font-weight:400">0 pts</span>
+        </div>
+        <div class="pane-scroll">
+          <table>
+            <thead><tr><th>#</th><th>Nome</th><th>Zona</th><th>E (m)</th><th>N (m)</th></tr></thead>
+            <tbody id="inf-tbody"></tbody>
+          </table>
+        </div>
+        <div class="geo-upload-panel" id="geoup-inf"></div>
+      </div>
+      <div class="pane-right">
+        <div class="map-wrap">
+          <div id="map-inf" style="width:100%;height:100%"></div>
+          <div class="layer-loading" id="loading-inf"><div class="spinner"></div><span>Carregando camada…</span></div>
+          <div class="measure-panel" id="measure-inf"></div>
+          <div class="measure-panel area-panel" id="area-inf"></div>
+          <div class="map-footer" id="footer-inf">
+            <div class="mf-item">📍 <span>Coordenadas:</span> <b id="coord-inf">—</b></div>
+            <div class="mf-sep"></div>
+            <div class="mf-item">📏 <span>Escala:</span> <b id="scale-inf">—</b></div>
+            <div class="mf-sep"></div>
+            <button type="button" class="mf-measure-btn" id="measureBtn-inf" onclick="openMeasurePopup('inf')">📐 Medir</button>
+            <button type="button" class="mf-measure-btn" id="areaBtn-inf" onclick="openAreaPopup('inf')" disabled title="Disponível quando houver polígono importado">📐 Área de polígono</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+</main>
+
+<script src="js/app.js"></script>
+</body>
+</html>
