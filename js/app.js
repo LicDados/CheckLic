@@ -498,15 +498,18 @@ function buildMap(divId, key) {
     {nome:'IBGE - Localidades Indígenas (Censo 2022)',      url:'https://geoservicoscenso2022.ibge.gov.br/geoserver/censo2022/ows', layer:'cete_BR_LIs_CD2022_02062025', tipo:'poligono'},
     {nome:'IBGE - Locais de Concentração de Pessoas Indígenas (Censo 2022)',url:'https://geoservicoscenso2022.ibge.gov.br/geoserver/censo2022/ows', layer:'cete_BR_LCPIs_CD2022_02062025', tipo:'ponto'},
     {nome:'IBGE - Localidades Quilombolas (Censo 2022)',      url:'https://geoservicoscenso2022.ibge.gov.br/geoserver/censo2022/ows', layer:'cete_BR_LQs_22_pt', tipo:'ponto'},    
-    {nome:'IBGE - Trecho Ferroviário',        url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CCAR:BC250_2025_fer_trecho_ferroviario_l', tipo:'linear'},
+    {nome:'IBGE - Localidades Projeto de Assentamento',      url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CGEO:APL_Localidades_Projeto_De_Assentamento', tipo:'ponto'},
+    {nome:'IBGE - Territórios Quilombolas',   url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CGMAT:qg_2022_620_territorioquilombola__v02', tipo:'poligono'},   
     {nome:'IBGE - Geomorfologia (Linear)',    url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:Geomorfologia_simbLinear_Brasil', tipo:'linear'},
     {nome:'IBGE - Curvas de Nível',           url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CCAR:BCIM_Curva_Nivel_L', tipo:'linear'},
     {nome:'IBGE - Hidrografia',               url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CCAR:BC250_2025_hid', tipo:'linear'},
+    {nome:'IBGE - Trecho Ferroviário',        url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CCAR:BC250_2025_fer_trecho_ferroviario_l', tipo:'linear'},
     {nome:'VALEC - Trecho Ferroviário', url:'https://geoservicos.inde.gov.br/geoserver/VALEC/ows', layer:'trecho_ferroviario_infrasa', tipo:'linear'},
     {nome:'DNIT - Rodovias',      url:'https://geoservicos.inde.gov.br/geoserver/DNIT/ows', layer:'cide_2024_25,snv_202507a', tipo:'linear'},
     {nome:'ICMBio - Cavidades Naturais Subterrâneas', url:'https://geoservicos.inde.gov.br/geoserver/ICMBio/ows', layer:'canie_052026_p', tipo:'ponto'},
     {nome:'ICMBio - UCs Federais',  url:'https://geoservicos.inde.gov.br/geoserver/ICMBio/ows', layer:'limiteucsfederais_a', tipo:'poligono'},
-    {nome:'FUNAI - Aldeias Indígenas',         url:'https://geoserver.funai.gov.br/geoserver/Funai/wms', layer:'Funai:aldeias_pontos', tipo:'ponto', wfsFallback:{url:'https://geoserver.funai.gov.br/geoserver/Funai/ows', typeName:'Funai:aldeias_pontos'}},
+    {nome:'FUNAI - Aldeias Indígenas',         url:'https://geoserver.funai.gov.br/geoserver/Funai/wms', layer:'Funai:aldeias_pontos', tipo:'ponto', wfsFallback:{url:'https://geoserver.funai.gov.br/geoserver/Funai/ows', typeName:'Funai:aldeias_pontos'}},    
+    {nome:'FUNAI - Terras Indígenas', url:'https://geoserver.funai.gov.br/geoserver/Funai/wms', layer:'Funai:tis_poligonais', tipo:'poligono', wfsFallback:{url:'https://geoserver.funai.gov.br/geoserver/Funai/ows', typeName:'Funai:tis_poligonais'}},
     {nome:'SNIF/SFB - Diversos/2024 (INCRA/FUNAI/ICMBio/Órgãos estaduais)',  url:'https://sistemas.florestal.gov.br/geoserver/snif/wms', layer:'snif:cnfp_2024', tipo:'poligono', gfiSrs:'EPSG:4674',
       wfsFallback:{url:'https://sistemas.florestal.gov.br/geoserver/snif/ows', typeName:'snif:cnfp_2024', srsName:'EPSG:4674'}},
     // Camada combinada: naufrágios (DPHDM) — todas as camadas estaduais
@@ -521,16 +524,13 @@ function buildMap(divId, key) {
       'DPHDM:rs_principal_shp',
     ].join(',')},
   ];
-
   // Camadas que devem ficar em segundo plano (renderizadas "abaixo" das
   // demais camadas quando ativas simultaneamente). São polígonos preenchidos
   // normais (não em modo circunscrito).
   const WMS_LAYERS_BACKGROUND = [
-    {nome:'IBGE - Relevo', url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:geomorfologia_5000', tipo:'poligono'},
-    {nome:'IBGE - Territórios Quilombolas',   url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CGMAT:qg_2022_620_territorioquilombola__v02', tipo:'poligono'},
-    {nome:'IBGE - Vegetação',                 url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:vegetacao_area_brasil', tipo:'poligono'},
-    {nome:'IBGE - Geologia',                  url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:Geologia_area_Brasil', tipo:'poligono'},
-    {nome:'FUNAI - Terras Indígenas', url:'https://geoserver.funai.gov.br/geoserver/Funai/wms', layer:'Funai:tis_poligonais', tipo:'poligono', wfsFallback:{url:'https://geoserver.funai.gov.br/geoserver/Funai/ows', typeName:'Funai:tis_poligonais'}},    
+    {nome:'IBGE - Geologia', url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:Geologia_area_Brasil', tipo:'poligono'},
+    {nome:'IBGE - Relevo', url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:geomorfologia_5000', tipo:'poligono'},    
+    {nome:'IBGE - Vegetação', url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:vegetacao_area_brasil', tipo:'poligono'},     
   ];
 
   // Panes por tipologia — garantem que camadas do tipo LINHA sempre fiquem
