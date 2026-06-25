@@ -70,7 +70,7 @@
       <!-- ÍCONE CONVERTER: troque o emoji abaixo -->
       <span class="card-icon">🔄</span>
       <h2>Converter Coordenadas (SICG)</h2>
-      <p>Ferramenta para conversão de coordenadas UTM das fichas de sítios arqueológicos para latitude/longitude do SICG. Visualize o resultado no mapa e exporte em KML ou Shapefile para conferência no QGIS ou no Google Earth.</p>
+      <p>Ferramenta para conversão de coordenadas UTM das fichas de sítios arqueológicos para latitude/longitude do SICG. Visualize o resultado no mapa e exporte o arquivo geoespacial de preferência para conferência no QGIS ou no Google Earth.</p>
       <div class="card-cta">Acessar <span>→</span></div>
     </div>
 
@@ -86,7 +86,7 @@
       <!-- ÍCONE INFORMAR: troque o emoji abaixo -->
       <span class="card-icon">📌</span>
       <h2>Informar Coordenadas</h2>
-      <p>Ferramenta para inserção manual de coordenadas UTM impressas nas fotos ou importação de arquivos geoespaciais (kml/kmz ou shp). Visualize o resultado no mapa e exporte os pontos em KML ou Shapefile para conferência no QGIS ou no Google Earth.</p>
+      <p>Ferramenta para inserção manual de coordenadas UTM impressas nas fotos ou importação de arquivos geoespaciais (kml, kmz, geojson, gpx ou shp). Visualize o resultado no mapa e exporte os pontos para conferência no QGIS ou no Google Earth.</p>
       <div class="card-cta">Acessar <span>→</span></div>
     </div>
 
@@ -103,9 +103,8 @@
 ════════════════════════════════════════ -->
 <div id="screen-converter" class="screen">
   <div class="page-header">
-    <button type="button" class="btn-back" onclick="go('home')">← Menu</button>
+    <button type="button" class="btn-back" title="Voltar ao menu inicial" onclick="go('home')">← Menu</button>
     <div class="page-title">🔄 Converter Coordenadas — UTM → Lat/Long</div>
-    <button type="button" class="btn-clear" onclick="clearConverter()">🗑 Limpar</button>
     <button type="button" class="theme-btn" id="colorBtn1" title="Cores" aria-label="Escolher cores do tema" onclick="toggleColorPanel('cp1')">🎨</button>
     <button type="button" class="theme-btn" id="themeBtn" title="Modo claro/escuro" aria-label="Alternar modo claro ou escuro" onclick="toggleTheme()">☀️</button>
   </div>
@@ -117,11 +116,13 @@
         Esta ferramenta converte coordenadas <strong>UTM (Universal Transversa de Mercator)</strong> — informadas por Fuso, Zona, Este (E) e Norte (N) — para <strong>latitude e longitude</strong> no Datum <strong>SIRGAS2000</strong>, padrão oficial brasileiro. É voltada ao preenchimento de informações geoespaciais de sítios arqueológicos no <strong>SICG/IPHAN</strong>.
         <ul>
           <li><strong>Entrada em lote:</strong> adicione quantos pontos quiser e converta todos de uma vez.</li>
-          <li><strong>Visualização no mapa:</strong> os pontos aparecem sobre camadas oficiais (IPHAN, IBGE, FUNAI, ICMBio e outras).</li>
-          <li><strong>Tabela pronta para copiar:</strong> o painel esquerdo gera Lat/Lon prontos para colar nos campos do SICG.</li>
-          <li><strong>Exportação:</strong> baixe os pontos em <strong>KML</strong> (Google Earth) ou <strong>Shapefile</strong> (QGIS).</li>
+          <li><strong>Visualização no mapa:</strong> os pontos aparecem sobre dezenas de camadas oficiais (IPHAN, IBGE, FUNAI, ICMBio, DNIT, SNIF, ANA, VALEC, Marinha e outras).</li>
+          <li><strong>Copiar coordenadas:</strong> cada latitude e longitude convertida tem um botão de cópia individual (⧉) ao lado do valor, pronto para colar no SICG.</li>
+          <li><strong>Importar arquivo geoespacial:</strong> sobreponha KML, KMZ, GeoJSON, GPX ou Shapefile (.zip ou pasta) para conferência visual.</li>
+          <li><strong>Ferramentas do mapa:</strong> meça distâncias e calcule a área de polígonos importados (m², km² e ha) pelos botões do rodapé.</li>
+          <li><strong>Exportação:</strong> botão único <strong>Exportar</strong> com escolha de formato — KML (Google Earth), Shapefile .zip (QGIS) ou GeoJSON.</li>
         </ul>
-        <span class="info-note">Dica: ao colar valores manualmente, o SICG aceita o símbolo de grau (º) automaticamente.</span>
+        <span class="info-note">Dica: ao colar valores manualmente, o SICG aceita o símbolo de grau (º) automaticamente. Passe o cursor sobre os botões para ver o que cada um faz.</span>
       </div>
       <div class="section-label">Coordenadas UTM de entrada</div>
       <div class="coord-rows" id="conv-rows"></div>
@@ -137,13 +138,15 @@
         <div class="stat-chip ok"><span class="n" id="conv-cnt">0</span><span>pontos convertidos</span></div>
       </div>
       <div style="flex:1"></div>
-      <button type="button" class="btn btn-sm" onclick="showConvInput()">✏️ Editar entradas</button>
-      <button type="button" class="btn btn-green btn-sm" onclick="downloadKML(convData,'coordenadas_convertidas')">⬇ Baixar KML</button>
-      <button type="button" class="btn btn-green btn-sm" onclick="downloadSHP(convData,'coordenadas_convertidas')">⬇ Baixar Shapefile</button>
+      <button type="button" class="btn btn-sm" title="Voltar à edição das coordenadas UTM informadas" onclick="showConvInput()">✏️ Editar entradas</button>
+      <div class="export-wrap">
+        <button type="button" class="btn btn-green btn-sm" title="Exportar os pontos em KML, Shapefile (.zip) ou GeoJSON" onclick="toggleExportMenu(event,'conv','coordenadas_convertidas')">⬇ Exportar ▾</button>
+        <div class="export-menu" id="exportmenu-conv"></div>
+      </div>
       <div class="btn-divider"></div>
-      <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('conv','file')">⬆ Importar KML/KMZ</button>
-      <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('conv','folder')">⬆ Importar Shapefile</button>
-      <button type="button" class="btn btn-sm" onclick="clearConverter()">🗑 Limpar</button>
+      <button type="button" class="btn btn-upload btn-sm" title="Importar KML, KMZ, GeoJSON, GPX ou Shapefile compactado (.zip) para visualizar no mapa" onclick="triggerGeoUpload('conv','file')">⬆ Importar arquivo geoespacial</button>
+      <button type="button" class="btn btn-upload btn-sm" title="Selecionar a pasta com os componentes do Shapefile (.shp, .shx, .dbf, .prj)" onclick="triggerGeoUpload('conv','folder')">⬆ Importar Shapefile (pasta)</button>
+      <button type="button" class="btn btn-sm" title="Limpar tudo: pontos, tabela, camadas importadas e medições" onclick="clearConverter()">🗑 Limpar</button>
     </div>
     <div class="split-pane">
       <div class="pane-left">
@@ -170,7 +173,7 @@
             <div class="mf-sep"></div>
             <div class="mf-item">📏 <span>Escala:</span> <b id="scale-conv">—</b></div>
             <div class="mf-sep"></div>
-            <button type="button" class="mf-measure-btn" id="measureBtn-conv" onclick="openMeasurePopup('conv')">📐 Medir</button>
+            <button type="button" class="mf-measure-btn" id="measureBtn-conv" title="Medir distâncias no mapa (clique para adicionar pontos; ESC desfaz o último)" onclick="openMeasurePopup('conv')">📐 Medir</button>
             <button type="button" class="mf-measure-btn" id="areaBtn-conv" onclick="openAreaPopup('conv')" disabled title="Disponível quando houver polígono importado">📐 Área de polígono</button>
           </div>
         </div>
@@ -184,9 +187,8 @@
 ════════════════════════════════════════ -->
 <div id="screen-extrair" class="screen">
   <div class="page-header">
-    <button type="button" class="btn-back" onclick="go('home')">← Menu</button>
+    <button type="button" class="btn-back" title="Voltar ao menu inicial" onclick="go('home')">← Menu</button>
     <div class="page-title">📷 Extrair Coordenadas das Fotos</div>
-    <button type="button" class="btn-clear" onclick="clearExtrair()">🗑 Limpar</button>
     <button type="button" class="theme-btn" id="colorBtn2" title="Cores" aria-label="Escolher cores do tema" onclick="toggleColorPanel('cp2')">🎨</button>
     <button type="button" class="theme-btn" id="themeBtn2" title="Modo claro/escuro" aria-label="Alternar modo claro ou escuro" onclick="toggleTheme()">☀️</button>
   </div>
@@ -198,9 +200,10 @@
         Esta ferramenta lê automaticamente as coordenadas de <strong>GPS embutidas (metadados EXIF)</strong> em fotografias e as posiciona no mapa — útil para georreferenciar registros fotográficos de campo sem digitação manual.
         <ul>
           <li><strong>Envio individual ou em lote:</strong> selecione várias fotos ou uma pasta inteira (incluindo subpastas).</li>
-          <li><strong>Conversão automática:</strong> as coordenadas são convertidas para <strong>UTM/SIRGAS2000</strong>.</li>
+          <li><strong>Conversão automática:</strong> as coordenadas são convertidas para <strong>UTM/SIRGAS2000</strong> e plotadas no mapa.</li>
           <li><strong>Tabela detalhada:</strong> o painel esquerdo lista nome do arquivo, coordenadas, altitude e data/hora de cada foto.</li>
-          <li><strong>Exportação:</strong> baixe os pontos em <strong>KML</strong> ou <strong>Shapefile</strong> para conferência no QGIS ou Google Earth.</li>
+          <li><strong>Importar e medir:</strong> sobreponha arquivos geoespaciais (KML/KMZ/GeoJSON/GPX/Shapefile), meça distâncias e calcule áreas no próprio mapa.</li>
+          <li><strong>Exportação:</strong> botão único <strong>Exportar</strong> com escolha de formato — KML, Shapefile .zip ou GeoJSON.</li>
         </ul>
         <span class="info-note">Formatos aceitos: JPG, JPEG, TIFF, HEIC, HEIF e WEBP. Fotos sem GPS são identificadas e contabilizadas à parte. Todo o processamento ocorre no seu navegador — nenhuma foto é enviada a servidores.</span>
       </div>
@@ -229,12 +232,14 @@
         <div class="stat-chip warn"><span class="n" id="ext-cnt-warn">0</span><span>sem GPS</span></div>
       </div>
       <div style="flex:1"></div>
-      <button type="button" class="btn btn-green btn-sm" onclick="downloadKML(extData,'pontos_extraidos')">⬇ Baixar KML</button>
-      <button type="button" class="btn btn-green btn-sm" onclick="downloadSHP(extData,'pontos_extraidos')">⬇ Baixar Shapefile</button>
+      <div class="export-wrap">
+        <button type="button" class="btn btn-green btn-sm" title="Exportar os pontos em KML, Shapefile (.zip) ou GeoJSON" onclick="toggleExportMenu(event,'ext','pontos_extraidos')">⬇ Exportar ▾</button>
+        <div class="export-menu" id="exportmenu-ext"></div>
+      </div>
       <div class="btn-divider"></div>
-      <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('ext','file')">⬆ Importar KML/KMZ</button>
-      <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('ext','folder')">⬆ Importar Shapefile</button>
-      <button type="button" class="btn btn-sm" onclick="clearExtrair()">🔄 Nova seleção</button>
+      <button type="button" class="btn btn-upload btn-sm" title="Importar KML, KMZ, GeoJSON, GPX ou Shapefile compactado (.zip) para visualizar no mapa" onclick="triggerGeoUpload('ext','file')">⬆ Importar arquivo geoespacial</button>
+      <button type="button" class="btn btn-upload btn-sm" title="Selecionar a pasta com os componentes do Shapefile (.shp, .shx, .dbf, .prj)" onclick="triggerGeoUpload('ext','folder')">⬆ Importar Shapefile (pasta)</button>
+      <button type="button" class="btn btn-sm" title="Recomeçar: limpa fotos, tabela, camadas importadas e medições" onclick="clearExtrair()">🔄 Nova seleção</button>
     </div>
     <div class="split-pane">
       <div class="pane-left">
@@ -261,7 +266,7 @@
             <div class="mf-sep"></div>
             <div class="mf-item">📏 <span>Escala:</span> <b id="scale-ext">—</b></div>
             <div class="mf-sep"></div>
-            <button type="button" class="mf-measure-btn" id="measureBtn-ext" onclick="openMeasurePopup('ext')">📐 Medir</button>
+            <button type="button" class="mf-measure-btn" id="measureBtn-ext" title="Medir distâncias no mapa (clique para adicionar pontos; ESC desfaz o último)" onclick="openMeasurePopup('ext')">📐 Medir</button>
             <button type="button" class="mf-measure-btn" id="areaBtn-ext" onclick="openAreaPopup('ext')" disabled title="Disponível quando houver polígono importado">📐 Área de polígono</button>
           </div>
         </div>
@@ -275,9 +280,8 @@
 ════════════════════════════════════════ -->
 <div id="screen-informar" class="screen">
   <div class="page-header">
-    <button type="button" class="btn-back" onclick="go('home')">← Menu</button>
+    <button type="button" class="btn-back" title="Voltar ao menu inicial" onclick="go('home')">← Menu</button>
     <div class="page-title">📌 Informar Coordenadas UTM / Importar Arquivos</div>
-    <button type="button" class="btn-clear" onclick="clearInformar()">🗑 Limpar</button>
     <button type="button" class="theme-btn" id="colorBtn3" title="Cores" aria-label="Escolher cores do tema" onclick="toggleColorPanel('cp3')">🎨</button>
     <button type="button" class="theme-btn" id="themeBtn3" title="Modo claro/escuro" aria-label="Alternar modo claro ou escuro" onclick="toggleTheme()">☀️</button>
   </div>
@@ -289,22 +293,22 @@
         Esta ferramenta oferece dois caminhos para visualizar dados no mapa: <strong>digitar coordenadas UTM manualmente</strong> (por exemplo, as impressas em fotos ou relatórios) <strong>ou</strong> <strong>importar arquivos geoespaciais</strong> já existentes.
         <ul>
           <li><strong>Entrada manual:</strong> informe Nome, Fuso, Zona, Este e Norte de cada ponto; o sistema converte e plota automaticamente.</li>
-          <li><strong>Importar KML/KMZ e Shapefile:</strong> visualize camadas de pontos, linhas e polígonos diretamente no mapa.</li>
-          <li><strong>Camadas importadas:</strong> aparecem no painel com ícone de tipologia (📍 ponto, ➖ linha, ⬛ polígono) e cor personalizável.</li>
-          <li><strong>Ferramentas do mapa:</strong> meça distâncias e calcule a área de polígonos importados (m², km² e hectares) pelos botões no rodapé.</li>
-          <li><strong>Exportação:</strong> pontos digitados podem ser baixados em KML ou Shapefile.</li>
+          <li><strong>Importar arquivo geoespacial:</strong> aceita KML, KMZ, GeoJSON, GPX e Shapefile — compactado em <strong>.zip</strong> ou como pasta com os componentes (.shp, .shx, .dbf, .prj).</li>
+          <li><strong>Camadas importadas:</strong> aparecem no painel com cor personalizável e ícones de tipologia na ordem <strong>📍 ponto, ➖ linha, ⬛ polígono</strong>; nos pontos, é exibida a quantidade detectada.</li>
+          <li><strong>Ferramentas do mapa:</strong> meça distâncias e calcule a área de polígonos importados (m², km² e hectares) pelos botões do rodapé.</li>
+          <li><strong>Exportação:</strong> botão único <strong>Exportar</strong> com escolha de formato — KML, Shapefile .zip ou GeoJSON.</li>
         </ul>
-        <span class="info-note">Shapefile deve ser enviado como pasta contendo os arquivos componentes (.shp, .shx, .dbf e, idealmente, .prj). Limite de 50 MB por envio.</span>
+        <span class="info-note">Shapefile pode ser enviado compactado em .zip ou como pasta com os arquivos componentes (.shp, .shx, .dbf e, idealmente, .prj). Limite de 50 MB por envio. Passe o cursor sobre os botões para ver o que cada um faz.</span>
       </div>
       <div class="section-label">Pontos UTM</div>
       <div class="coord-rows" id="inf-rows"></div>
       <button type="button" class="btn btn-sm" onclick="addInfRow()" style="margin-bottom:18px">＋ Adicionar ponto</button>
-      <div class="btn-group" style="align-items:center">
+      <div class="btn-group btn-group-nowrap" style="align-items:center">
         <button type="button" class="btn btn-primary" onclick="saveInformar()">💾 Salvar e visualizar no mapa</button>
         <span class="or-divider">ou</span>
         <span class="import-group-label">Importar arquivo:</span>
-        <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('inf','file')">⬆ KML/KMZ</button>
-        <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('inf','folder')">⬆ Shapefile</button>
+        <button type="button" class="btn btn-upload btn-sm" title="Importar KML, KMZ, GeoJSON, GPX ou Shapefile compactado (.zip) para visualizar no mapa" onclick="triggerGeoUpload('inf','file')">⬆ Geoespacial</button>
+        <button type="button" class="btn btn-upload btn-sm" title="Selecionar a pasta com os componentes do Shapefile (.shp, .shx, .dbf, .prj)" onclick="triggerGeoUpload('inf','folder')">⬆ Shapefile (pasta)</button>
       </div>
     </div>
   </div>
@@ -315,12 +319,14 @@
       </div>
       <div style="flex:1"></div>
       <button type="button" class="btn btn-sm" id="inf-edit-btn" onclick="showInfInput()">✏️ Editar pontos</button>
-      <button type="button" class="btn btn-green btn-sm" id="inf-dl-kml" onclick="downloadKML(infData,'pontos_informados')">⬇ Baixar KML</button>
-      <button type="button" class="btn btn-green btn-sm" id="inf-dl-shp" onclick="downloadSHP(infData,'pontos_informados')">⬇ Baixar Shapefile</button>
+      <div class="export-wrap" id="inf-dl-kml">
+        <button type="button" class="btn btn-green btn-sm" title="Exportar os pontos em KML, Shapefile (.zip) ou GeoJSON" onclick="toggleExportMenu(event,'inf','pontos_informados')">⬇ Exportar ▾</button>
+        <div class="export-menu" id="exportmenu-inf"></div>
+      </div>
       <div class="btn-divider" id="inf-dl-divider"></div>
-      <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('inf','file')">⬆ Importar KML/KMZ</button>
-      <button type="button" class="btn btn-upload btn-sm" onclick="triggerGeoUpload('inf','folder')">⬆ Importar Shapefile</button>
-      <button type="button" class="btn btn-sm" onclick="clearInformar()">🗑 Limpar</button>
+      <button type="button" class="btn btn-upload btn-sm" title="Importar KML, KMZ, GeoJSON, GPX ou Shapefile compactado (.zip) para visualizar no mapa" onclick="triggerGeoUpload('inf','file')">⬆ Importar arquivo geoespacial</button>
+      <button type="button" class="btn btn-upload btn-sm" title="Selecionar a pasta com os componentes do Shapefile (.shp, .shx, .dbf, .prj)" onclick="triggerGeoUpload('inf','folder')">⬆ Importar Shapefile (pasta)</button>
+      <button type="button" class="btn btn-sm" title="Limpar tudo: pontos, tabela, camadas importadas e medições" onclick="clearInformar()">🗑 Limpar</button>
     </div>
     <div class="split-pane">
       <div class="pane-left">
@@ -347,7 +353,7 @@
             <div class="mf-sep"></div>
             <div class="mf-item">📏 <span>Escala:</span> <b id="scale-inf">—</b></div>
             <div class="mf-sep"></div>
-            <button type="button" class="mf-measure-btn" id="measureBtn-inf" onclick="openMeasurePopup('inf')">📐 Medir</button>
+            <button type="button" class="mf-measure-btn" id="measureBtn-inf" title="Medir distâncias no mapa (clique para adicionar pontos; ESC desfaz o último)" onclick="openMeasurePopup('inf')">📐 Medir</button>
             <button type="button" class="mf-measure-btn" id="areaBtn-inf" onclick="openAreaPopup('inf')" disabled title="Disponível quando houver polígono importado">📐 Área de polígono</button>
           </div>
         </div>

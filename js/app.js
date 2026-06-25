@@ -207,17 +207,17 @@ const URL_LOCALIDADES_MUN = 'https://servicodados.ibge.gov.br/api/v1/localidades
 function buildMap(divId, key) {
   if (maps[key]) { setTimeout(()=>maps[key].invalidateSize(), 150); return; }
 
-  const m = L.map(divId, {zoomControl:true}).setView([-15.5,-47.9], 5);
+  const m = L.map(divId, {zoomControl:true, maxZoom:22}).setView([-15.5,-47.9], 5);
   maps[key] = m;
 
   // ── Bases ──
   const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom:19, attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    maxZoom:22, maxNativeZoom:19, attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(m);
 
   const sat = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    { maxZoom:19, attribution:'Tiles © Esri' }
+    { maxZoom:22, maxNativeZoom:19, attribution:'Tiles © Esri' }
   );
 
   // Fundo vetorial em branco (sem tiles, apenas cor de fundo do mapa)
@@ -553,6 +553,32 @@ function buildMap(divId, key) {
     m.createPane('wmsPointPane');
     m.getPane('wmsPointPane').style.zIndex = 390;
   }
+  // Panes para camadas IMPORTADAS (acima das WMS). Ordem de empilhamento e de
+  // prioridade de clique: polígono (mais baixo) < linha < ponto (mais alto).
+  // Isso garante que, ao clicar sobre um ponto ou linha que esteja dentro de um
+  // polígono, o popup exibido seja o da feição correta — e não o do polígono.
+  if(!m.getPane('impPolygonPane')){
+    m.createPane('impPolygonPane');
+    m.getPane('impPolygonPane').style.zIndex = 410;
+  }
+  if(!m.getPane('impLinePane')){
+    m.createPane('impLinePane');
+    m.getPane('impLinePane').style.zIndex = 420;
+  }
+  if(!m.getPane('impPointPane')){
+    m.createPane('impPointPane');
+    m.getPane('impPointPane').style.zIndex = 430;
+  }
+  // Renderizadores por pane. Polígonos usam CANVAS (muito mais rápido para
+  // muitas/grandes poligonais — evita travamentos e "tremor" no pan/zoom).
+  // Linhas e pontos usam SVG (melhor nitidez e interação para feições finas).
+  if(!m._impRenderers){
+    m._impRenderers = {
+      impPolygonPane: L.canvas({pane:'impPolygonPane', padding:0.5}).addTo(m),
+      impLinePane:    L.svg({pane:'impLinePane'}).addTo(m),
+      impPointPane:   L.svg({pane:'impPointPane'}).addTo(m),
+    };
+  }
   function paneForTipo(tipo, isBackground){
     if(isBackground) return 'wmsBackgroundPane';
     if(tipo==='linear') return 'wmsLinePane';
@@ -566,6 +592,7 @@ function buildMap(divId, key) {
       format: 'image/png',
       transparent: true,
       version: def.version || '1.1.1',
+      maxZoom: 22,
       attribution: def.nome,
     };
     if(pane) opts.pane = pane;
@@ -960,6 +987,11 @@ function buildMap(divId, key) {
         if (topoGroup.hasLayer(marker)) topoGroup.removeLayer(marker);
       });
     }
+    // Se a camada removida é uma camada importada, fecha qualquer popup aberto
+    // (evita que o popup de uma feição importada continue visível após ela ser
+    // desmarcada no painel "Camadas Enviadas").
+    const isUploaded = (uploadedLayers[key]||[]).some(l => l.layer === e.layer);
+    if(isUploaded) m.closePopup();
   });
 
   // ── Rodapé: coordenadas do mouse ──
@@ -999,14 +1031,19 @@ function buildMap(divId, key) {
   //    ativos e o clique não atingir outra camada, exibe coordenadas ──
   m.on('click', async e => {
     if (measureState[key] && measureState[key].active) return; // ferramenta de medição em uso
-    // Consulta camadas WMS ativas (GetFeatureInfo) antes de qualquer outra lógica
+    // PRIORIDADE 1: ponto ou linha importado (feições pequenas e específicas)
+    if (uploadedPointOrLineHit(key, e.latlng)) return;
+    // PRIORIDADE 2: polígono importado — tem prioridade sobre as camadas WMS,
+    // pois é uma feição que o usuário adicionou intencionalmente. Ao clicar
+    // dentro de um polígono importado, mostra suas propriedades (e não as da
+    // camada WMS de fundo, como IBGE Geologia/Relevo/Vegetação).
+    if (uploadedPolygonHit(key, e.latlng)) return;
+    // PRIORIDADE 3: camadas WMS ativas (GetFeatureInfo)
     const handled = await queryWmsFeatureInfo(e.latlng, e.containerPoint);
     if (handled) return;
     const hasEstado = m.hasLayer(estadoGroup);
     const hasMun = m.hasLayer(munGroup);
     if (hasEstado || hasMun) return; // outras camadas tratam seus próprios cliques
-    // Verifica se algum overlay extra carregado pelo usuário está sob o ponto
-    if (clickHitsUploadedLayer(key, e.latlng)) return;
     openInfoPopup(e.latlng, '📍 Coordenadas', [
       ['Latitude',  e.latlng.lat.toFixed(6)+'°'],
       ['Longitude', e.latlng.lng.toFixed(6)+'°'],
@@ -1433,6 +1470,8 @@ function clearUploadedLayers(key){
   });
   uploadedLayers[key] = [];
   uploadedColorIdx[key] = 0;
+  // Limpa relatórios de integridade de trilhas armazenados
+  for(const k in _trackReports) delete _trackReports[k];
   // Limpa a lista visual e oculta o painel de camadas importadas
   const list = document.getElementById('geolist-'+key);
   if(list) list.innerHTML = '';
@@ -1457,7 +1496,7 @@ function initGeoUploadPanel(key, map, layersControl){
   if(!panel) return;
   panel.innerHTML = `
     <div class="geo-upload-hdr"><span>📁 Camadas importadas</span></div>
-    <input type="file" class="geo-upload-input" id="geofile-${key}" accept=".kml,.kmz">
+    <input type="file" class="geo-upload-input" id="geofile-${key}" accept=".kml,.kmz,.zip,.geojson,.json,.gpx,.rar,.7z,.shp,.dbf,.shx,.prj" multiple>
     <input type="file" class="geo-upload-input" id="geofolder-${key}" webkitdirectory directory multiple>
     <div class="geo-layers-list" id="geolist-${key}"></div>
   `;
@@ -1488,13 +1527,137 @@ function _triggerGeoUploadInput(key, mode){
   else { document.getElementById('geofile-'+key)?.click(); }
 }
 
-function clickHitsUploadedLayer(key, latlng){
-  // Verificação simples: se houver camadas enviadas, deixa o evento da própria
-  // camada (que chama stopPropagation) tratar o clique; aqui retornamos false
-  // para permitir o popup de coordenadas quando o clique não acerta nada.
+// Verifica se o clique acertou um PONTO ou LINHA importado (feições de maior
+// prioridade). Abre o popup correspondente e retorna true.
+function uploadedPointOrLineHit(key, latlng){
+  const map = maps[key];
+  if(!map) return false;
+  const layers = uploadedLayers[key] || [];
+  if(!layers.length) return false;
+
+  const clickPt = map.latLngToContainerPoint(latlng);
+  const TOL_POINT = 14, TOL_LINE = 10;
+  let pointHit = null, lineHit = null;
+
+  for(const entry of layers){
+    if(!map.hasLayer(entry.layer)) continue; // ignora camadas desmarcadas/ocultas
+    try{
+      entry.layer.eachLayer(sub=>{
+        const gt = sub.feature && sub.feature.geometry && sub.feature.geometry.type;
+        if(sub instanceof L.CircleMarker){
+          if(!pointHit && map.latLngToContainerPoint(sub.getLatLng()).distanceTo(clickPt) <= TOL_POINT){
+            pointHit = sub;
+          }
+        } else if((gt==='LineString'||gt==='MultiLineString') && sub.getLatLngs){
+          if(!lineHit && polylineHitTest(map, sub.getLatLngs(), clickPt, TOL_LINE)){
+            lineHit = sub;
+          }
+        }
+      });
+    }catch(e){}
+  }
+  const chosen = pointHit || lineHit;
+  if(!chosen) return false;
+  openFeaturePopupAt(map, chosen, chosen instanceof L.CircleMarker ? chosen.getLatLng() : latlng);
+  return true;
+}
+
+// Verifica se o clique caiu dentro de um POLÍGONO importado. Abre o popup e
+// retorna true. Chamado APÓS a consulta WMS, para que as camadas WMS tenham
+// prioridade sobre os polígonos importados.
+function uploadedPolygonHit(key, latlng){
+  const map = maps[key];
+  if(!map) return false;
+  const layers = uploadedLayers[key] || [];
+  if(!layers.length) return false;
+  let polyHit = null;
+  for(const entry of layers){
+    if(!map.hasLayer(entry.layer)) continue; // ignora camadas desmarcadas/ocultas
+    try{
+      entry.layer.eachLayer(sub=>{
+        const gt = sub.feature && sub.feature.geometry && sub.feature.geometry.type;
+        if(!polyHit && (gt==='Polygon'||gt==='MultiPolygon') && sub.getBounds){
+          if(polygonHitTest(sub, latlng)) polyHit = sub;
+        }
+      });
+    }catch(e){}
+  }
+  if(!polyHit) return false;
+  openFeaturePopupAt(map, polyHit, latlng);
+  return true;
+}
+
+// Abre o popup de uma feição importada de forma confiável, mesmo que a camada
+// seja não-interativa (interactive:false). Reaproveita o conteúdo definido em
+// bindPopup; se não houver, não faz nada.
+function openFeaturePopupAt(map, layer, latlng){
+  try{
+    map.closePopup();
+    const popup = layer.getPopup && layer.getPopup();
+    if(popup){
+      popup.setLatLng(latlng);
+      map.openPopup(popup);
+    } else if(layer.openPopup){
+      layer.openPopup(latlng);
+    }
+  }catch(e){ console.warn('Falha ao abrir popup da feição importada', e); }
+}
+
+// Testa se um ponto (latlng) está dentro de um polígono (ray casting).
+function polygonHitTest(polyLayer, latlng){
+  try{
+    if(!polyLayer.getBounds().contains(latlng)) return false;
+    const gj = polyLayer.feature && polyLayer.feature.geometry;
+    if(!gj) return false;
+    const polys = gj.type==='Polygon' ? [gj.coordinates]
+                : gj.type==='MultiPolygon' ? gj.coordinates : [];
+    const x = latlng.lng, y = latlng.lat;
+    for(const poly of polys){
+      // anel externo = poly[0]; anéis internos (buracos) = poly[1..]
+      let inside = false;
+      const ring = poly[0];
+      for(let i=0, j=ring.length-1; i<ring.length; j=i++){
+        const xi=ring[i][0], yi=ring[i][1], xj=ring[j][0], yj=ring[j][1];
+        const intersect = ((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi);
+        if(intersect) inside = !inside;
+      }
+      if(inside){
+        // verifica buracos
+        let inHole = false;
+        for(let h=1; h<poly.length; h++){
+          const hole = poly[h];
+          let hi = false;
+          for(let i=0, j=hole.length-1; i<hole.length; j=i++){
+            const xi=hole[i][0], yi=hole[i][1], xj=hole[j][0], yj=hole[j][1];
+            const intersect = ((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi);
+            if(intersect) hi = !hi;
+          }
+          if(hi){ inHole = true; break; }
+        }
+        if(!inHole) return true;
+      }
+    }
+  }catch(e){}
   return false;
 }
 
+// Testa se o ponto de clique (em px) está a até `tol` px de alguma aresta da
+// polilinha. Aceita arrays aninhados (MultiLineString).
+function polylineHitTest(map, latlngs, clickPt, tol){
+  if(!latlngs || !latlngs.length) return false;
+  if(Array.isArray(latlngs[0])){
+    return latlngs.some(part => polylineHitTest(map, part, clickPt, tol));
+  }
+  for(let i=0;i<latlngs.length-1;i++){
+    const a = map.latLngToContainerPoint(latlngs[i]);
+    const b = map.latLngToContainerPoint(latlngs[i+1]);
+    if(L.LineUtil.pointToSegmentDistance(clickPt, a, b) <= tol) return true;
+  }
+  return false;
+}
+
+// Detecta (sem abrir popup) se há um PONTO ou LINHA importado próximo ao clique.
+// Usado para o polígono ceder a prioridade às feições de ponto/linha.
 function nextColor(key){
   const c = PASTEL_COLORS[uploadedColorIdx[key] % PASTEL_COLORS.length];
   uploadedColorIdx[key]++;
@@ -1506,14 +1669,16 @@ function addGeoLayerToPanel(key, name, layer, color, map, ulc, geojson){
 
   // ── Tipologias vetoriais presentes (ponto, linha, polígono) ──
   const types = new Set();
+  let pointCount = 0;
   (geojson?.features||[]).forEach(f=>{
     const t = f.geometry?.type;
-    if(t==='Point'||t==='MultiPoint') types.add('point');
+    if(t==='Point'){ types.add('point'); pointCount += 1; }
+    else if(t==='MultiPoint'){ types.add('point'); pointCount += (f.geometry.coordinates||[]).length; }
     else if(t==='LineString'||t==='MultiLineString') types.add('line');
     else if(t==='Polygon'||t==='MultiPolygon') types.add('polygon');
   });
 
-  uploadedLayers[key].push({id, name, layer, color, geojson, types:[...types], hasPolygon:types.has('polygon')});
+  uploadedLayers[key].push({id, name, layer, color, geojson, types:[...types], hasPolygon:types.has('polygon'), pointCount});
   const panel = document.getElementById('geoup-'+key);
   panel.classList.add('show');
   const list = document.getElementById('geolist-'+key);
@@ -1521,11 +1686,47 @@ function addGeoLayerToPanel(key, name, layer, color, map, ulc, geojson){
   item.className='geo-layer-item';
   item.id='item-'+id;
 
+  // Rank de tipologia para AGRUPAR as camadas no painel:
+  // pontos (0) → linhas (1) → polígonos (2). Quando a camada tem mais de uma
+  // tipologia, usa a de menor rank (a mais "pontual") como critério.
+  const typeRank = {point:0, line:1, polygon:2};
+  let primaryRank = 3;
+  ['point','line','polygon'].forEach(t=>{ if(types.has(t)) primaryRank = Math.min(primaryRank, typeRank[t]); });
+  item.dataset.typerank = primaryRank;
+  item.dataset.name = (name||'').toLowerCase();
+  item.dataset.pointcount = pointCount;
+
+  // Ordem fixa das tipologias: pontos → linhas → polígonos
+  const typeOrder = ['point','line','polygon'];
   const typeIcons = {point:'📍', line:'➖', polygon:'⬛'};
   const typeLabels = {point:'Ponto', line:'Linha', polygon:'Polígono'};
-  const iconsHtml = [...types].map(t=>`<span class="glt-type-icon" title="${typeLabels[t]}">${typeIcons[t]}</span>`).join('');
+  const iconsHtml = typeOrder.filter(t=>types.has(t)).map(t=>{
+    // No caso de pontos, mostra a quantidade ao lado do ícone
+    const countTxt = (t==='point' && pointCount>0)
+      ? `<span class="glt-type-count">${pointCount}</span>` : '';
+    return `<span class="glt-type-icon" title="${t==='point'?('Total: '+pointCount+' ponto(s) detectado(s)'):typeLabels[t]}">${typeIcons[t]}${countTxt}</span>`;
+  }).join('');
 
-  item.innerHTML = `<input type="color" class="layer-color-input glt-color" value="${escHtml(color)}" title="Cor da camada"><span class="glt-name" title="${escHtml(name)}">${escHtml(name)}</span><span class="glt-types">${iconsHtml}</span><span class="glt-rm" title="Remover">✕</span>`;
+  // Badge de integridade da trilha (se houver relatório para esta camada)
+  const report = findTrackReport(name);
+  let badgeHtml = '';
+  if(report){
+    const icon = report.authentic ? '✅' : (report.limited ? '🛈' : '⚠️');
+    const cls  = report.authentic ? 'tr-ok' : (report.limited ? 'tr-info' : 'tr-warn');
+    const tip  = report.authentic ? 'Trilha autêntica — clique aqui para ver a análise'
+               : report.limited ? 'Verificação limitada — clique aqui para mais detalhes'
+               : 'Possíveis alterações — clique aqui para ver a análise';
+    badgeHtml = `<span class="glt-integrity ${cls}" title="${escHtml(tip)}" data-report="${escHtml(report.fileName)}">${icon}</span>`;
+  }
+
+  item.innerHTML = `<input type="color" class="layer-color-input glt-color" value="${escHtml(color)}" title="Cor da camada"><span class="glt-name" title="${escHtml(name)}">${escHtml(name)}</span><span class="glt-types">${iconsHtml}</span>${badgeHtml}<span class="glt-rm" title="Remover">✕</span>`;
+  const badgeEl = item.querySelector('.glt-integrity');
+  if(badgeEl){
+    badgeEl.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      openTrackReportModal(report);
+    });
+  }
   item.querySelector('.glt-color').addEventListener('input', e=>{
     const newColor = e.target.value;
     const entry = uploadedLayers[key].find(l=>l.id===id);
@@ -1552,7 +1753,33 @@ function addGeoLayerToPanel(key, name, layer, color, map, ulc, geojson){
     try{ map.fitBounds(layer.getBounds(), {padding:[32,32]}); }catch(e){}
   });
   list.appendChild(item);
+  reorderGeoLayerList(key);
   updateAreaButton(key);
+}
+
+// Reordena as camadas importadas no painel agrupando-as por tipologia:
+// primeiro os pontos, depois as linhas e por último os polígonos.
+// Dentro de cada grupo, mantém ordem alfabética pelo nome do arquivo.
+function reorderGeoLayerList(key){
+  const list = document.getElementById('geolist-'+key);
+  if(!list) return;
+  const items = Array.from(list.querySelectorAll('.geo-layer-item'));
+  items.sort((a,b)=>{
+    const ra = parseInt(a.dataset.typerank||'3', 10);
+    const rb = parseInt(b.dataset.typerank||'3', 10);
+    if(ra !== rb) return ra - rb; // grupos: ponto(0) → linha(1) → polígono(2)
+    // Grupo de PONTOS (rank 0): ordenado pela QUANTIDADE de pontos detectados,
+    // do MAIOR para o MENOR. Empate: ordem alfabética.
+    if(ra === 0){
+      const pa = parseInt(a.dataset.pointcount||'0', 10);
+      const pb = parseInt(b.dataset.pointcount||'0', 10);
+      if(pa !== pb) return pb - pa; // decrescente por total de pontos
+      return (a.dataset.name||'').localeCompare(b.dataset.name||'', 'pt');
+    }
+    // Demais grupos (linha/polígono): ordem alfabética crescente
+    return (a.dataset.name||'').localeCompare(b.dataset.name||'', 'pt');
+  });
+  items.forEach(it => list.appendChild(it)); // reanexa na nova ordem
 }
 
 // Habilita o botão "Área de polígono" somente quando há ao menos uma camada
@@ -1580,17 +1807,25 @@ function bindGeoFeaturePopup(layer, feature, key){
     `<tr><td style="color:var(--muted);padding:3px 10px 3px 0;font-size:12px;white-space:nowrap;vertical-align:top">${escHtml(k)}</td><td style="font-weight:500;padding:3px 0;font-size:12px">${v!==undefined&&v!==null?escHtml(v):'—'}</td></tr>`
   ).join('');
   const titulo = escHtml(props.name || props.Name || props.NAME || 'Feição');
+  // Ícone da tipologia da feição clicada (ponto/linha/polígono)
+  const gt = feature.geometry && feature.geometry.type;
+  const typeIcon = (gt==='Point'||gt==='MultiPoint') ? '📍'
+                 : (gt==='LineString'||gt==='MultiLineString') ? '➖'
+                 : (gt==='Polygon'||gt==='MultiPolygon') ? '⬛' : '📐';
+  const typeLbl  = (gt==='Point'||gt==='MultiPoint') ? 'Ponto'
+                 : (gt==='LineString'||gt==='MultiLineString') ? 'Linha'
+                 : (gt==='Polygon'||gt==='MultiPolygon') ? 'Polígono' : '';
   layer.bindPopup(`<div style="min-width:180px">
-      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid var(--border)">📐 ${titulo}</div>
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px">
+        <span title="${typeLbl}" style="flex-shrink:0">${typeIcon}</span>
+        <span>${titulo}</span>
+      </div>
       <table style="border-collapse:collapse;width:100%">${rows || '<tr><td style="font-size:12px;color:var(--muted)">Sem atributos</td></tr>'}</table>
     </div>`, {maxWidth:280, className:'rich-popup'});
-  layer.on('click', e=>{
-    if(measureState[key] && measureState[key].active) return; // medição ativa: deixa o clique chegar ao mapa
-    L.DomEvent.stopPropagation(e);
-    const map = maps[key];
-    if(map){ map.closePopup(); }
-    layer.openPopup(e.latlng);
-  });
+  // O clique é tratado de forma centralizada pelo handler do mapa
+  // (clickHitsUploadedLayer), que aplica prioridade ponto > linha > polígono.
+  // Não vinculamos um handler de clique por feição para evitar concorrência
+  // entre camadas (que fazia o polígono sobrepor o popup de pontos/linhas).
 }
 
 // Reaplica a cor a uma camada GeoJSON importada, preservando o estilo
@@ -1604,7 +1839,7 @@ function setGeoLayerColor(layer, color){
       } else if(geomType==='LineString'||geomType==='MultiLineString'){
         sub.setStyle({color, weight:3.5, opacity:1, fill:false});
       } else if(sub instanceof L.CircleMarker){
-        sub.setStyle({color, fillColor:color, weight:2, fillOpacity:0.6});
+        sub.setStyle({color:'#ffffff', fillColor:color, weight:1.5, fillOpacity:1});
       } else {
         sub.setStyle({color, fillColor:color, weight:2.5, fillOpacity:0.12});
       }
@@ -1614,23 +1849,38 @@ function setGeoLayerColor(layer, color){
 
 function addGeoJSONToMap(key, geojson, name, map, layersControl){
   const color = nextColor(key);
+  // Determina a tipologia predominante da coleção para escolher o pane
+  // (prioridade de clique: ponto > linha > polígono).
+  const tset = new Set();
+  (geojson.features||[]).forEach(f=>{
+    const t = f.geometry && f.geometry.type;
+    if(t==='Point'||t==='MultiPoint') tset.add('point');
+    else if(t==='LineString'||t==='MultiLineString') tset.add('line');
+    else if(t==='Polygon'||t==='MultiPolygon') tset.add('polygon');
+  });
+  const paneFor = gt => {
+    if(gt==='Point'||gt==='MultiPoint') return 'impPointPane';
+    if(gt==='LineString'||gt==='MultiLineString') return 'impLinePane';
+    if(gt==='Polygon'||gt==='MultiPolygon') return 'impPolygonPane';
+    return 'impPolygonPane';
+  };
   // "Modo circunscrito" para polígonos: apenas contorno, sem preenchimento sólido
+  const R = map._impRenderers || {};
   const layer = L.geoJSON(geojson, {
     style: f => {
       const t = f.geometry && f.geometry.type;
       if(t==='Polygon'||t==='MultiPolygon'){
-        return {color, weight:2.5, fillOpacity:0.05, fillColor:color, dashArray:'4 3'};
+        return {color, weight:2.5, fillOpacity:0.05, fillColor:color, dashArray:'4 3', pane:'impPolygonPane', renderer:R.impPolygonPane, interactive:false};
       }
       if(t==='LineString'||t==='MultiLineString'){
-        return {color, weight:3.5, opacity:1, fill:false};
+        return {color, weight:3.5, opacity:1, fill:false, pane:'impLinePane', renderer:R.impLinePane, interactive:false};
       }
-      return {color, weight:2.5, fillOpacity:0.12, fillColor:color};
+      return {color, weight:2.5, fillOpacity:0.12, fillColor:color, pane:'impPolygonPane', renderer:R.impPolygonPane, interactive:false};
     },
-    pointToLayer: (f, latlng) => L.circleMarker(latlng, {radius:6, color, weight:2, fillColor:color, fillOpacity:0.6}),
+    pointToLayer: (f, latlng) => L.circleMarker(latlng, {radius:6, color:'#ffffff', weight:1.5, fillColor:color, fillOpacity:1, pane:'impPointPane', renderer:R.impPointPane, interactive:false}),
     onEachFeature: (feature, layer) => bindGeoFeaturePopup(layer, feature, key)
   });
   layer.addTo(map);
-  layer.bringToFront();
   layersControl.addOverlay(layer, name);
   const ulcContainer = layersControl.getContainer();
   ulcContainer.style.display = '';
@@ -1648,6 +1898,22 @@ function addGeoJSONToMap(key, geojson, name, map, layersControl){
     const b = layer.getBounds();
     if(b.isValid()) map.fitBounds(b, {padding:[32,32]});
   }catch(e){ console.warn('Bounds inválidos para camada', name, e); }
+  // Garante a renderização imediata das feições (evita o efeito de só aparecer
+  // após o primeiro zoom). O reflow causado por nomes de camada longos no painel
+  // pode deixar os renderizadores dessincronizados; forçamos um reset completo
+  // dos panes após o layout estabilizar.
+  function forceRedraw(){
+    try{
+      map.invalidateSize({animate:false});
+      const R = map._impRenderers || {};
+      Object.values(R).forEach(r=>{
+        try{ if(r._reset) r._reset(); else if(r._update) r._update(); }catch(_){}
+      });
+    }catch(_){}
+  }
+  setTimeout(forceRedraw, 60);
+  // Segundo redraw após o reflow do painel de camadas (nomes longos):
+  setTimeout(forceRedraw, 350);
 }
 
 // ── Detecta zona UTM a partir do .prj (WKT) ou estima pela Easting ──
@@ -1705,37 +1971,433 @@ function reprojectGeoJSON(geojson, zone, south){
   });
 }
 
+// Se as coordenadas do GeoJSON estiverem fora da faixa lat/lon (ou seja, ainda
+// em UTM porque o shpjs não conseguiu reprojetar via .prj), tenta reprojetar
+// manualmente assumindo UTM SIRGAS2000/GRS80. Examina várias feições para
+// não depender só da primeira (que poderia ser de outra tipologia).
+function maybeReprojectGeoJSON(geojson, prjText){
+  const sample = (geojson.features||[]).find(f=>f.geometry && f.geometry.coordinates);
+  if(!sample) return;
+  const flat = JSON.stringify(sample.geometry.coordinates).match(/-?\d+\.?\d*/g).map(Number);
+  const outOfRange = flat.some(v=>!isFinite(v) || Math.abs(v)>180+90);
+  if(!outOfRange) return;
+  const zoneInfo = detectUTMZone(prjText, flat);
+  if(zoneInfo){
+    reprojectGeoJSON(geojson, zoneInfo.zone, zoneInfo.south);
+  }
+}
+
+// Remove a 3ª/4ª dimensão (Z elevação / M medida) de cada vértice. Tracks de
+// GPS convertidos para shapefile costumam ser PolyLineZ/PolyLineM; se o valor Z
+// ou M "vazar" para a posição de uma coordenada, a feição é plotada em local
+// errado (ex.: Antártida). Mantemos apenas [lon, lat] (2D).
+function stripZMCoords(geojson){
+  function strip(coords){
+    if(typeof coords[0]==='number'){
+      return [coords[0], coords[1]]; // descarta Z e M
+    }
+    return coords.map(strip);
+  }
+  (geojson.features||[]).forEach(f=>{
+    if(f.geometry && f.geometry.coordinates){
+      f.geometry.coordinates = strip(f.geometry.coordinates);
+    }
+  });
+}
+
+// Pipeline completo para camadas importadas: remove Z/M, reprojeta se necessário.
+function sanitizeAndReproject(geojson, prjText, base){
+  stripZMCoords(geojson);
+  maybeReprojectGeoJSON(geojson, prjText);
+  checkShapefileTrackIntegrity(geojson, base);
+}
+
+// Verifica integridade quando o shapefile contém LINHAS que aparentam ser
+// trilhas. Na conversão GPX→SHP, os atributos de gravação (tempo, velocidade)
+// podem ou não ser preservados. Procuramos por colunas típicas de trilha no
+// .dbf (ex.: time/timestamp/ele/speed). A presença indica que as propriedades
+// originais foram mantidas; a ausência impede a verificação de autenticidade.
+let _shpTrackChecked = false; // evita múltiplos alertas no mesmo lote
+function checkShapefileTrackIntegrity(geojson, base){
+  try{
+    const feats = geojson.features || [];
+    const lineFeats = feats.filter(f=>{
+      const t = f.geometry && f.geometry.type;
+      return t==='LineString' || t==='MultiLineString';
+    });
+    if(!lineFeats.length) return; // não há linhas
+
+    // Atributos/colunas típicas de trilha gravada por GPS
+    const trackKeys = ['time','timestamp','datetime','hora','ele','elevation','altitude','speed','velocidade','course','heading','hdop','vdop','pdop','sat','fix','track_fid','track_seg','trkpt','gpxtype'];
+    const sample = lineFeats[0].properties || {};
+    const keys = Object.keys(sample).map(k=>k.toLowerCase());
+    const found = trackKeys.filter(tk => keys.some(k => k.includes(tk)));
+
+    // Densidade média de vértices por linha
+    const totalVerts = lineFeats.reduce((s,f)=>{
+      const c = f.geometry.coordinates;
+      const count = (f.geometry.type==='MultiLineString') ? c.reduce((a,p)=>a+p.length,0) : c.length;
+      return s+count;
+    },0);
+    const avg = Math.round(totalVerts/lineFeats.length);
+
+    // Pista pelo nome do arquivo
+    const nameHint = /(trilha|track|caminhament|percurso|trajeto|rota|gps|gpx|walk|hike|trail)/i.test(base||'');
+
+    // ── DECISÃO: isto é uma trilha? ──
+    // Só consideramos trilha (e exibimos o aviso de integridade) se houver
+    // evidência positiva: atributos de GPS, OU nome sugestivo, OU densidade de
+    // vértices muito alta (gravação contínua). Linhas comuns — estradas, rios,
+    // limites, hidrografia — não têm esses sinais e NÃO são avaliadas.
+    const looksLikeTrack = found.length > 0 || nameHint || avg >= 80;
+    if(!looksLikeTrack) return; // linha comum — não aplica verificação de trilha
+
+    const flags = [], positives = [];
+    if(found.length){
+      positives.push('atributos de trilha preservados na conversão: ' + found.join(', '));
+    } else {
+      flags.push('o shapefile não preserva atributos de gravação (tempo, altitude, velocidade)');
+      flags.push('a conversão para SHP descartou os metadados originais da trilha');
+    }
+    if(nameHint) positives.push('nome do arquivo sugere ser uma trilha/percurso');
+    if(avg >= 30) positives.push(`alta densidade de vértices (~${avg} por linha), típica de gravação contínua`);
+    else flags.push(`baixa densidade de vértices (~${avg} por linha) — pode indicar simplificação/edição`);
+
+    showShapefileTrackReport(base, flags, positives);
+  }catch(e){ console.warn('Falha na verificação de trilha (SHP):', e); }
+}
+
+function showShapefileTrackReport(fileName, flags, positives){
+  const ok = positives.some(p=>p.includes('atributos de trilha preservados'));
+  // 'limited' = verificação limitada (metadados descartados na conversão SHP)
+  _trackReports[fileName] = { authentic: ok, limited: !ok, flags, positives, kind:'shp', fileName };
+}
+
 // ── Leitura de KML/KMZ ──
 async function handleGeoFile(key, files, map, layersControl){
-  const file = files[0]; if(!file) return;
-  if(file.size > MAX_GEO_FILE_MB*1024*1024){
+  const arr = Array.from(files||[]);
+  if(!arr.length) return;
+
+  const totalSize = arr.reduce((s,f)=>s+f.size,0);
+  if(totalSize > MAX_GEO_FILE_MB*1024*1024){
     alert(`Arquivo muito grande. O limite é ${MAX_GEO_FILE_MB} MB.`);
     return;
   }
+
+  // Se o usuário selecionou componentes soltos de shapefile (.shp/.dbf/.shx…),
+  // trata como um conjunto shapefile (reaproveita a lógica de pasta).
+  const hasShpParts = arr.some(f=>/\.(shp|dbf|shx|prj|cpg)$/i.test(f.name));
+  if(hasShpParts){
+    return handleGeoFolder(key, files, map, layersControl);
+  }
+
   showLayerLoading(key);
   try{
-    let kmlText;
-    if(/\.kmz$/i.test(file.name)){
-      const zip = await JSZip.loadAsync(file);
-      const kmlEntry = Object.values(zip.files).find(f=>/\.kml$/i.test(f.name));
-      if(!kmlEntry){ alert('Arquivo KMZ não contém um KML válido.'); hideLayerLoading(key); return; }
-      kmlText = await kmlEntry.async('text');
-    } else {
-      kmlText = await file.text();
+    for(const file of arr){
+      const name = file.name;
+      try{
+        if(/\.(kml|kmz)$/i.test(name)){
+          await importKmlFile(key, file, map, layersControl);
+        } else if(/\.(geojson|json)$/i.test(name)){
+          const txt = await file.text();
+          const geojson = JSON.parse(txt);
+          if(!geojson.features || !geojson.features.length){ alert(`Nenhuma feição encontrada em "${name}".`); continue; }
+          addGeoJSONToMap(key, geojson, name, map, layersControl);
+        } else if(/\.gpx$/i.test(name)){
+          const gpxText = await file.text();
+          const dom = new DOMParser().parseFromString(gpxText, 'text/xml');
+          const geojson = toGeoJSON.gpx(dom);
+          if(!geojson.features || !geojson.features.length){ alert(`Nenhuma feição encontrada em "${name}".`); continue; }
+          analyzeTrackIntegrity(dom, name); // verifica autenticidade da trilha (GPX)
+          addGeoJSONToMap(key, geojson, name, map, layersControl);
+        } else if(/\.zip$/i.test(name)){
+          await importZippedArchive(key, file, map, layersControl);
+        } else if(/\.(rar|7z|tar|gz)$/i.test(name)){
+          alert(`Arquivos ${name.split('.').pop().toUpperCase()} não podem ser descompactados no navegador.\n\nReexporte o shapefile como .ZIP (formato compactado padrão) — ele é aceito diretamente — ou use o botão "Importar Shapefile (pasta)".`);
+        } else {
+          alert(`Formato não reconhecido: "${name}".\nFormatos aceitos: KML, KMZ, GeoJSON, GPX, Shapefile (.zip ou pasta).`);
+        }
+      }catch(err){
+        console.error(err);
+        alert(`Erro ao processar "${name}": ${err.message}`);
+      }
     }
-    const dom = new DOMParser().parseFromString(kmlText, 'text/xml');
-    const geojson = toGeoJSON.kml(dom);
-    if(!geojson.features || !geojson.features.length){
-      alert('Nenhuma feição encontrada no arquivo KML.');
-      hideLayerLoading(key); return;
-    }
-    addGeoJSONToMap(key, geojson, file.name, map, layersControl);
-  }catch(err){
-    console.error(err);
-    alert('Erro ao processar o arquivo KML/KMZ: '+err.message);
   }finally{
     setTimeout(()=>hideLayerLoading(key), 400);
   }
+}
+
+// Lê um arquivo KML ou KMZ e adiciona ao mapa.
+async function importKmlFile(key, file, map, layersControl){
+  let kmlText;
+  if(/\.kmz$/i.test(file.name)){
+    const zip = await JSZip.loadAsync(file);
+    const kmlEntry = Object.values(zip.files).find(f=>/\.kml$/i.test(f.name));
+    if(!kmlEntry){ alert('Arquivo KMZ não contém um KML válido.'); return; }
+    kmlText = await kmlEntry.async('text');
+  } else {
+    kmlText = await file.text();
+  }
+  const dom = new DOMParser().parseFromString(kmlText, 'text/xml');
+  const geojson = toGeoJSON.kml(dom);
+  if(!geojson.features || !geojson.features.length){
+    alert('Nenhuma feição encontrada no arquivo KML.');
+    return;
+  }
+  addGeoJSONToMap(key, geojson, file.name, map, layersControl);
+}
+
+// Lê um shapefile compactado em .zip (a biblioteca shpjs aceita o buffer do
+// zip diretamente e já cuida do .prj/reprojeção quando presente).
+// Lê um .zip e decide o conteúdo: se contiver KML/KMZ, importa-os; caso
+// contrário, trata como shapefile compactado.
+async function importZippedArchive(key, file, map, layersControl){
+  let zip;
+  try{
+    zip = await JSZip.loadAsync(file);
+  }catch(err){
+    // Não é um zip legível pelo JSZip — tenta como shapefile direto (shpjs)
+    return importZippedShapefile(key, file, map, layersControl);
+  }
+  const entries = Object.values(zip.files).filter(f=>!f.dir);
+  const kmlEntries = entries.filter(f=>/\.kml$/i.test(f.name));
+  const kmzEntries = entries.filter(f=>/\.kmz$/i.test(f.name));
+  const hasShp = entries.some(f=>/\.shp$/i.test(f.name));
+
+  // Se houver KML/KMZ dentro do zip, importa cada um deles
+  if(kmlEntries.length || kmzEntries.length){
+    let added = 0;
+    for(const entry of kmlEntries){
+      try{
+        const txt = await entry.async('text');
+        const dom = new DOMParser().parseFromString(txt, 'text/xml');
+        const gj = toGeoJSON.kml(dom);
+        if(gj.features && gj.features.length){
+          addGeoJSONToMap(key, gj, entry.name.split('/').pop(), map, layersControl);
+          added++;
+        }
+      }catch(e){ console.warn('Falha ao ler KML do zip:', entry.name, e); }
+    }
+    for(const entry of kmzEntries){
+      try{
+        const kmzBlob = await entry.async('blob');
+        const innerZip = await JSZip.loadAsync(kmzBlob);
+        const innerKml = Object.values(innerZip.files).find(f=>/\.kml$/i.test(f.name));
+        if(innerKml){
+          const txt = await innerKml.async('text');
+          const dom = new DOMParser().parseFromString(txt, 'text/xml');
+          const gj = toGeoJSON.kml(dom);
+          if(gj.features && gj.features.length){
+            addGeoJSONToMap(key, gj, entry.name.split('/').pop(), map, layersControl);
+            added++;
+          }
+        }
+      }catch(e){ console.warn('Falha ao ler KMZ do zip:', entry.name, e); }
+    }
+    // Se além de KML/KMZ houver também um shapefile, importa-o também
+    if(hasShp){ await importZippedShapefile(key, file, map, layersControl); return; }
+    if(!added) alert(`O arquivo "${file.name}" não contém KML/KMZ com feições válidas.`);
+    return;
+  }
+
+  // Sem KML/KMZ: trata como shapefile compactado
+  return importZippedShapefile(key, file, map, layersControl);
+}
+
+async function importZippedShapefile(key, file, map, layersControl){
+  const buf = await file.arrayBuffer();
+  let geojson;
+  try{
+    geojson = await shp(buf); // shpjs: aceita ArrayBuffer de um .zip
+  }catch(err){
+    alert(`Erro ao ler o shapefile compactado "${file.name}": ${err.message}\nVerifique se o .zip contém ao menos os arquivos .shp, .shx e .dbf.`);
+    return;
+  }
+  // shpjs pode retornar uma FeatureCollection ou um array delas (múltiplos .shp)
+  const collections = Array.isArray(geojson) ? geojson : [geojson];
+  let added = 0;
+  collections.forEach((gj, i)=>{
+    if(gj && gj.features && gj.features.length){
+      sanitizeAndReproject(gj, null, file.name); // remove Z/M e reprojeta se necessário
+      const nm = collections.length>1 ? `${file.name} (${gj.fileName||('camada '+(i+1))})` : file.name;
+      addGeoJSONToMap(key, gj, nm, map, layersControl);
+      added++;
+    }
+  });
+  if(!added) alert(`O shapefile compactado "${file.name}" não contém feições válidas.`);
+}
+
+// ════════════════════════════════════════
+//  VERIFICAÇÃO DE INTEGRIDADE DE TRILHAS (GPX)
+// ════════════════════════════════════════
+// IMPORTANTE: arquivos GPX/SHP não possuem assinatura criptográfica. Não é
+// possível PROVAR matematicamente que uma trilha não foi alterada. O que se faz
+// aqui é uma ANÁLISE DE PLAUSIBILIDADE: tracks gravados por GPS real têm
+// características típicas (carimbos de tempo sequenciais, velocidades plausíveis,
+// densidade de pontos, metadados do aparelho/software). A ausência ou
+// inconsistência desses sinais indica que o arquivo pode ter sido editado.
+function analyzeTrackIntegrity(gpxDom, fileName){
+  try{
+    const trkpts = Array.from(gpxDom.getElementsByTagName('trkpt'));
+    if(!trkpts.length) return; // não é um track (pode ser rota/waypoint) — não avalia
+
+    const total = trkpts.length;
+    let withTime = 0, withEle = 0;
+    const times = [], pts = [];
+    trkpts.forEach(tp=>{
+      const lat = parseFloat(tp.getAttribute('lat'));
+      const lon = parseFloat(tp.getAttribute('lon'));
+      const timeEl = tp.getElementsByTagName('time')[0];
+      const eleEl  = tp.getElementsByTagName('ele')[0];
+      if(timeEl){ withTime++; const t = Date.parse(timeEl.textContent); if(!isNaN(t)) times.push(t); }
+      if(eleEl) withEle++;
+      if(isFinite(lat) && isFinite(lon)) pts.push([lat,lon]);
+    });
+
+    // Metadados do criador (aparelho/software de gravação)
+    const gpxEl = gpxDom.getElementsByTagName('gpx')[0];
+    const creator = gpxEl ? (gpxEl.getAttribute('creator')||'') : '';
+
+    const flags = [];      // problemas encontrados
+    const positives = [];  // indícios de autenticidade
+
+    // 1) Carimbos de tempo: tracks reais têm tempo em (quase) todos os pontos
+    const timeRatio = total ? withTime/total : 0;
+    if(timeRatio >= 0.9) positives.push('carimbos de tempo presentes na maioria dos pontos');
+    else if(timeRatio === 0) flags.push('nenhum ponto possui carimbo de tempo (típico de trilha desenhada manualmente)');
+    else flags.push(`apenas ${Math.round(timeRatio*100)}% dos pontos têm carimbo de tempo`);
+
+    // 2) Sequência temporal: tempos devem ser crescentes
+    if(times.length >= 2){
+      let nonMonotonic = 0;
+      for(let i=1;i<times.length;i++) if(times[i] < times[i-1]) nonMonotonic++;
+      if(nonMonotonic === 0) positives.push('sequência temporal consistente (crescente)');
+      else flags.push(`${nonMonotonic} ponto(s) com tempo fora de ordem (possível edição)`);
+    }
+
+    // 3) Velocidades plausíveis. Como as trilhas são percorridas A PÉ, a
+    //    velocidade típica fica entre ~2 e ~7 km/h (até ~15 km/h em corrida ou
+    //    descidas). Avaliamos a mediana (robusta a saltos de GPS) e marcamos
+    //    velocidades grosseiramente impossíveis (> 200 km/h) como sinal de
+    //    edição; velocidades altas sustentadas como atípicas para caminhada.
+    if(times.length >= 2 && pts.length === times.length){
+      let grossImplausible = 0, maxSpeed = 0;
+      const speeds = [];
+      for(let i=1;i<pts.length;i++){
+        const dt = (times[i]-times[i-1])/1000; // s
+        if(dt <= 0) continue;
+        const d = haversineM(pts[i-1], pts[i]); // m
+        const kmh = (d/dt)*3.6;
+        speeds.push(kmh);
+        if(kmh > maxSpeed) maxSpeed = kmh;
+        if(kmh > 200) grossImplausible++;
+      }
+      // mediana das velocidades (descarta picos isolados de GPS)
+      let median = 0;
+      if(speeds.length){
+        const s = speeds.slice().sort((a,b)=>a-b);
+        median = s[Math.floor(s.length/2)];
+      }
+      if(grossImplausible > 0){
+        flags.push(`${grossImplausible} trecho(s) com velocidade impossível (> 200 km/h) — forte indício de edição`);
+      } else if(median > 15){
+        flags.push(`velocidade mediana ~${median.toFixed(1)} km/h é alta para uma trilha a pé (esperado ~2–7 km/h)`);
+      } else if(median >= 1 && median <= 12){
+        positives.push(`ritmo compatível com caminhada (mediana ~${median.toFixed(1)} km/h)`);
+      } else {
+        positives.push(`velocidades sem saltos impossíveis (máx. ~${Math.round(maxSpeed)} km/h)`);
+      }
+    }
+
+    // 4) Elevação: tracks de GPS costumam registrar altitude
+    if(withEle/total >= 0.9) positives.push('altitude registrada nos pontos');
+    else if(withEle === 0) flags.push('sem dados de altitude');
+
+    // 5) Densidade/segmentos retos: poucos pontos com grandes saltos sugere
+    //    desenho manual em vez de gravação contínua
+    if(total < 10) flags.push(`baixa densidade de pontos (${total}) — atípico para gravação contínua`);
+
+    // 6) Metadado do criador
+    if(creator) positives.push(`gravado/exportado por: "${creator}"`);
+    else flags.push('sem identificação do software/aparelho de origem (atributo "creator")');
+
+    showTrackIntegrityReport(fileName, flags, positives);
+  }catch(e){ console.warn('Falha na análise de integridade da trilha:', e); }
+}
+
+// Distância de Haversine entre [lat,lon] em metros
+function haversineM(a, b){
+  const R = 6371000, rad = d=>d*Math.PI/180;
+  const dLat = rad(b[0]-a[0]), dLon = rad(b[1]-a[1]);
+  const s = Math.sin(dLat/2)**2 + Math.cos(rad(a[0]))*Math.cos(rad(b[0]))*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+
+// Exibe um aviso ao usuário com o resultado da análise de autenticidade.
+// Armazena o relatório de integridade da trilha para ser exibido como ícone/
+// badge no painel de camadas importadas. A chave é o nome do arquivo.
+const _trackReports = {};
+
+function showTrackIntegrityReport(fileName, flags, positives){
+  const authentic = flags.length === 0;
+  _trackReports[fileName] = { authentic, flags, positives, kind:'gpx', fileName };
+}
+
+// Localiza o relatório de integridade correspondente a uma camada do painel.
+// O nome da camada pode ter sufixos (".shp", "(camada N)"), então tentamos
+// correspondência exata e depois por prefixo do nome base.
+function findTrackReport(layerName){
+  if(!layerName) return null;
+  if(_trackReports[layerName]) return _trackReports[layerName];
+  const base = layerName.replace(/\s*\(.*?\)\s*/g,'').replace(/\.(shp|gpx|kml|kmz|zip|geojson|json)$/i,'').trim().toLowerCase();
+  for(const key in _trackReports){
+    const kb = key.replace(/\.(shp|gpx|kml|kmz|zip|geojson|json)$/i,'').trim().toLowerCase();
+    if(kb === base || kb.startsWith(base) || base.startsWith(kb)) return _trackReports[key];
+  }
+  return null;
+}
+
+// Abre um modal com o relatório completo de integridade da trilha.
+function openTrackReportModal(report){
+  if(!report) return;
+  const old = document.getElementById('track-report-modal');
+  if(old) old.remove();
+
+  const statusTxt = report.authentic
+    ? '✅ Indícios de AUTENTICIDADE'
+    : (report.limited ? '🛈 Verificação LIMITADA' : '⚠️ Possíveis ALTERAÇÕES');
+  const statusCls = report.authentic ? 'tr-ok' : (report.limited ? 'tr-info' : 'tr-warn');
+
+  const posList = (report.positives||[]).map(p=>`<li>${escHtml(p)}</li>`).join('');
+  const flagList = (report.flags||[]).map(f=>`<li>${escHtml(f)}</li>`).join('');
+
+  const concl = report.authentic
+    ? 'A trilha apresenta as características típicas de uma gravação de GNSS original (percurso a pé).'
+    : (report.limited
+        ? 'A conversão para Shapefile descartou os metadados de gravação (tempo, velocidade), o que impede confirmar a autenticidade. Para verificação completa, importe o arquivo GPX original.'
+        : 'Os pontos de atenção sugerem que o arquivo pode ter sido editado ou não corresponde a uma gravação contínua de GNSS.');
+
+  const modal = document.createElement('div');
+  modal.id = 'track-report-modal';
+  modal.className = 'track-modal-overlay';
+  modal.innerHTML = `
+    <div class="track-modal" role="dialog" aria-modal="true">
+      <div class="track-modal-hdr">
+        <span class="track-modal-title">Análise de integridade da trilha</span>
+        <button type="button" class="track-modal-close" aria-label="Fechar">✕</button>
+      </div>
+      <div class="track-modal-file">📄 ${escHtml(report.fileName)}</div>
+      <div class="track-status ${statusCls}">${statusTxt}</div>
+      ${posList ? `<div class="track-sec"><div class="track-sec-lbl">Indícios favoráveis</div><ul class="track-pos">${posList}</ul></div>` : ''}
+      ${flagList ? `<div class="track-sec"><div class="track-sec-lbl">Pontos de atenção</div><ul class="track-flag">${flagList}</ul></div>` : ''}
+      <div class="track-concl">${escHtml(concl)}</div>
+      <div class="track-note">Observação: esta é uma análise de plausibilidade. Arquivos GPX/SHP não possuem assinatura digital, portanto não é possível comprovar com certeza absoluta se houve alteração.</div>
+    </div>`;
+  document.body.appendChild(modal);
+  const close = ()=>modal.remove();
+  modal.querySelector('.track-modal-close').addEventListener('click', close);
+  modal.addEventListener('click', e=>{ if(e.target===modal) close(); });
+  document.addEventListener('keydown', function esc(e){ if(e.key==='Escape'){ close(); document.removeEventListener('keydown', esc); } });
 }
 
 // ── Leitura de Shapefile (pasta com .shp/.dbf/.shx/.prj) ──
@@ -1752,7 +2414,7 @@ async function handleGeoFolder(key, files, map, layersControl){
   // Agrupa por nome base (sem extensão) para detectar conjuntos shapefile
   const groups = {};
   arr.forEach(f=>{
-    const m = f.name.match(/^(.*)\.(shp|shx|dbf|prj|cpg)$/i);
+    const m = f.name.match(/(?:^|\/)([^\/]+)\.(shp|shx|dbf|prj|cpg)$/i);
     if(!m) return;
     const base = m[1], ext = m[2].toLowerCase();
     groups[base] = groups[base] || {};
@@ -1777,40 +2439,39 @@ async function handleGeoFolder(key, files, map, layersControl){
         alert(`O conjunto "${base}" está incompleto. Componentes faltando: ${missing.join(', ')}.`);
         continue;
       }
-      const shpBuf = await set.shp.arrayBuffer();
-      const dbfBuf = await set.dbf.arrayBuffer();
-      let prjText = null;
-      if(set.prj){ try{ prjText = await set.prj.text(); }catch(e){} }
-      let geojson;
+      // Monta um .zip em memória com os componentes e usa o MESMO caminho do
+      // import por .zip (shp(buffer)). Isso garante tratamento idêntico de
+      // todas as geometrias (ponto, linha, polígono) e da reprojeção via .prj,
+      // evitando divergências entre os modos "pasta" e ".zip".
       try{
-        geojson = await shp.combine([ shp.parseShp(shpBuf, prjText), shp.parseDbf(dbfBuf) ]);
+        const zip = new JSZip();
+        // Usa os bytes brutos (Uint8Array) sem compressão (STORE) para evitar
+        // qualquer alteração nos dados binários do shapefile, garantindo que o
+        // shpjs leia exatamente como leria de um .zip gerado por um SIG.
+        zip.file(base+'.shp', new Uint8Array(await set.shp.arrayBuffer()));
+        zip.file(base+'.dbf', new Uint8Array(await set.dbf.arrayBuffer()));
+        zip.file(base+'.shx', new Uint8Array(await set.shx.arrayBuffer()));
+        if(set.prj) zip.file(base+'.prj', new Uint8Array(await set.prj.arrayBuffer()));
+        if(set.cpg) zip.file(base+'.cpg', new Uint8Array(await set.cpg.arrayBuffer()));
+        const zipBuf = await zip.generateAsync({type:'arraybuffer', compression:'STORE'});
+        let geojson = await shp(zipBuf);
+        const collections = Array.isArray(geojson) ? geojson : [geojson];
+        let prjText = null;
+        if(set.prj){ try{ prjText = await set.prj.text(); }catch(e){} }
+        let added = 0;
+        collections.forEach((gj, i)=>{
+          if(!gj || !gj.features || !gj.features.length) return;
+          sanitizeAndReproject(gj, prjText, base);
+          const nm = collections.length>1 ? `${base} (${gj.fileName||('camada '+(i+1))}).shp` : base+'.shp';
+          addGeoJSONToMap(key, gj, nm, map, layersControl);
+          added++;
+        });
+        if(!added) alert(`O shapefile "${base}" não contém feições válidas.`);
       }catch(err){
         console.error(err);
         alert(`Erro ao processar o shapefile "${base}": ${err.message}`);
         continue;
       }
-      if(!geojson.features || !geojson.features.length){
-        alert(`O shapefile "${base}" não contém feições válidas.`);
-        continue;
-      }
-      // Verifica se as coordenadas estão em uma faixa geográfica plausível (lat/lon)
-      const sample = geojson.features.find(f=>f.geometry && f.geometry.coordinates);
-      if(sample){
-        const flat = JSON.stringify(sample.geometry.coordinates).match(/-?\d+\.?\d*/g).map(Number);
-        const outOfRange = flat.some(v=>!isFinite(v) || Math.abs(v)>180+90);
-        if(outOfRange){
-          // Tenta reprojetar manualmente assumindo UTM SIRGAS2000/GRS80.
-          // Detecta a zona pelo .prj (se houver) ou estima pela coordenada Easting.
-          const zoneInfo = detectUTMZone(prjText, flat);
-          if(zoneInfo){
-            reprojectGeoJSON(geojson, zoneInfo.zone, zoneInfo.south);
-          } else {
-            alert(`O shapefile "${base}" parece estar em coordenadas projetadas (UTM) e não foi possível determinar a zona automaticamente. Inclua o arquivo .prj para conversão.`);
-            continue;
-          }
-        }
-      }
-      addGeoJSONToMap(key, geojson, base+'.shp', map, layersControl);
     }
   }catch(err){
     console.error(err);
@@ -1876,6 +2537,59 @@ function wHdr(dv,bl,data){
 }
 function wStr(dv,o,s){for(let i=0;i<s.length;i++)dv.setUint8(o+i,s.charCodeAt(i));}
 function saveBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);}
+
+// ════════════════════════════════════════
+//  EXPORTAÇÃO UNIFICADA (menu com escolha de formato)
+// ════════════════════════════════════════
+function _exportDataFor(key){
+  if(key==='conv') return convData;
+  if(key==='ext')  return extData;
+  if(key==='inf')  return infData;
+  return [];
+}
+function toggleExportMenu(ev, key, fname){
+  ev.stopPropagation();
+  const menu = document.getElementById('exportmenu-'+key);
+  if(!menu) return;
+  const data = _exportDataFor(key);
+  if(!data || !data.length){ alert('Nenhum ponto para exportar.'); return; }
+  // fecha outros menus abertos
+  document.querySelectorAll('.export-menu.open').forEach(m=>{ if(m!==menu) m.classList.remove('open'); });
+  const isOpen = menu.classList.contains('open');
+  if(isOpen){ menu.classList.remove('open'); return; }
+  menu.innerHTML = `
+    <button type="button" onclick="doExport('${key}','${fname}','kml')">📄 KML (.kml)</button>
+    <button type="button" onclick="doExport('${key}','${fname}','shp')">🗂️ Shapefile (.zip)</button>
+    <button type="button" onclick="doExport('${key}','${fname}','geojson')">🌐 GeoJSON (.geojson)</button>
+  `;
+  menu.classList.add('open');
+}
+function doExport(key, fname, fmt){
+  const data = _exportDataFor(key);
+  const menu = document.getElementById('exportmenu-'+key);
+  if(menu) menu.classList.remove('open');
+  if(!data || !data.length){ alert('Nenhum ponto para exportar.'); return; }
+  if(fmt==='kml')      downloadKML(data, fname);
+  else if(fmt==='shp') downloadSHP(data, fname);
+  else if(fmt==='geojson') downloadGeoJSON(data, fname);
+}
+function downloadGeoJSON(data, fname){
+  if(!data||!data.length){alert('Nenhum ponto para exportar.');return;}
+  const fc = {
+    type:'FeatureCollection',
+    features: data.map((p,i)=>({
+      type:'Feature',
+      properties:{ nome: p.name || ('Ponto '+(i+1)) },
+      geometry:{ type:'Point', coordinates:[p.lon, p.lat] }
+    }))
+  };
+  saveBlob(new Blob([JSON.stringify(fc,null,2)],{type:'application/geo+json'}), fname+'.geojson');
+}
+// Fecha o menu de exportação ao clicar fora
+document.addEventListener('click', e=>{
+  if(e.target.closest && e.target.closest('.export-wrap')) return;
+  document.querySelectorAll('.export-menu.open').forEach(m=>m.classList.remove('open'));
+});
 
 // ════════════════════════════════════════
 //  TELA 1 — CONVERTER
@@ -2172,11 +2886,9 @@ function showInfInput(){
 // visualização, esses botões ficam ocultos (não há o que baixar).
 function updateInfDownloadButtons(){
   const has = Array.isArray(infData) && infData.length > 0;
-  const kml = document.getElementById('inf-dl-kml');
-  const shp = document.getElementById('inf-dl-shp');
+  const exp = document.getElementById('inf-dl-kml'); // wrapper do botão Exportar
   const div = document.getElementById('inf-dl-divider');
-  if(kml) kml.style.display = has ? '' : 'none';
-  if(shp) shp.style.display = has ? '' : 'none';
+  if(exp) exp.style.display = has ? '' : 'none';
   if(div) div.style.display = has ? '' : 'none';
 }
 function clearInformar(){
