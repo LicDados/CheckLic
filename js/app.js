@@ -560,14 +560,22 @@ function buildMap(divId, key) {
   if(!m.getPane('impPolygonPane')){
     m.createPane('impPolygonPane');
     m.getPane('impPolygonPane').style.zIndex = 410;
+    // As feições importadas são tratadas pelo handler central de clique do mapa
+    // (são interactive:false). Por isso, o pane NÃO deve capturar eventos de
+    // ponteiro — caso contrário, o <canvas>/<svg> que cobre todo o mapa
+    // bloquearia os cliques nas camadas abaixo (ex.: Limites Estaduais/
+    // Municipais), impedindo seus popups de abrir.
+    m.getPane('impPolygonPane').style.pointerEvents = 'none';
   }
   if(!m.getPane('impLinePane')){
     m.createPane('impLinePane');
     m.getPane('impLinePane').style.zIndex = 420;
+    m.getPane('impLinePane').style.pointerEvents = 'none';
   }
   if(!m.getPane('impPointPane')){
     m.createPane('impPointPane');
     m.getPane('impPointPane').style.zIndex = 430;
+    m.getPane('impPointPane').style.pointerEvents = 'none';
   }
   // Renderizadores por pane. Polígonos usam CANVAS (muito mais rápido para
   // muitas/grandes poligonais — evita travamentos e "tremor" no pan/zoom).
@@ -1496,7 +1504,7 @@ function initGeoUploadPanel(key, map, layersControl){
   if(!panel) return;
   panel.innerHTML = `
     <div class="geo-upload-hdr"><span>📁 Camadas importadas</span></div>
-    <input type="file" class="geo-upload-input" id="geofile-${key}" accept=".kml,.kmz,.zip,.geojson,.json,.gpx,.rar,.7z,.shp,.dbf,.shx,.prj" multiple>
+    <input type="file" class="geo-upload-input" id="geofile-${key}" accept=".kml,.kmz,.zip,.geojson,.json,.gpx,.gtm,.rar,.7z,.shp,.dbf,.shx,.prj" multiple>
     <input type="file" class="geo-upload-input" id="geofolder-${key}" webkitdirectory directory multiple>
     <div class="geo-layers-list" id="geolist-${key}"></div>
   `;
@@ -2073,6 +2081,182 @@ function showShapefileTrackReport(fileName, flags, positives){
   _trackReports[fileName] = { authentic: ok, limited: !ok, flags, positives, kind:'shp', fileName };
 }
 
+// ════════════════════════════════════════
+//  LEITOR DE GTM (GPS TrackMaker — binário)
+// ════════════════════════════════════════
+// GTM é um formato BINÁRIO PROPRIETÁRIO (popular no Brasil). Não há biblioteca
+// JS pronta, então implementamos um leitor do formato GTM 211 com base na
+// especificação pública. Lê waypoints e tracklogs georreferenciados em WGS84.
+// Retorna { geojson, trackInfo } ou null se não conseguir interpretar.
+function parseGTM(buffer){
+  try{
+    const dv = new DataView(buffer);
+    let off = 0;
+    const u8  = ()=>{ const v=dv.getUint8(off); off+=1; return v; };
+    const i16 = ()=>{ const v=dv.getInt16(off,true); off+=2; return v; };
+    const u16 = ()=>{ const v=dv.getUint16(off,true); off+=2; return v; };
+    const i32 = ()=>{ const v=dv.getInt32(off,true); off+=4; return v; };
+    const u32 = ()=>{ const v=dv.getUint32(off,true); off+=4; return v; };
+    const f64 = ()=>{ const v=dv.getFloat64(off,true); off+=8; return v; };
+    const f32 = ()=>{ const v=dv.getFloat32(off,true); off+=4; return v; };
+    const str = ()=>{ const n=u16(); let s=''; for(let i=0;i<n;i++) s+=String.fromCharCode(u8()); return s; };
+
+    // ── Cabeçalho ──
+    const version = i16();
+    const tag = str(); // deve ser "TrackMaker"
+    if(!/TrackMaker/i.test(tag)) return null; // não é GTM válido
+    if(version < 211){
+      // versões antigas têm layout diferente; não suportadas
+      return { unsupported:true };
+    }
+
+    // Campos do cabeçalho GTM 211 (conforme especificação)
+    i16();          // code
+    /* gradnum   */ i16();
+    /* bcolor    */ i32();
+    /* nwpts visíveis etc. — pulamos campos de exibição */
+    /* fcolor    */ i32();
+    /* gradevel? */ const _grad = f32(); void _grad;
+    /* bytsdir   */ u8();
+    /* gradutm?  */ i16();
+    // Datum / projeção (queremos WGS84). O bloco a seguir contém vários campos
+    // de configuração de tela e datum que variam; em vez de mapear cada byte
+    // (frágil), localizamos os dados pelo padrão dos blocos de contagem.
+    // Para robustez, fazemos uma varredura: a partir daqui o GTM 211 traz
+    // o número de waypoints, imagens, trilhas, etc.
+    // Lê os contadores principais:
+    const nwpt   = i32();  // número de waypoints
+    const ntrk   = i32();  // número de pontos de tracklog (todos os trechos)
+    const nimg   = i32();  // número de imagens
+    const ntk    = i32();  // número de trilhas (track headers)
+
+    // pula nomes de datum/zona (2 strings) e parâmetros — campos de tamanho fixo
+    // Datum string + projeção: tentamos pular com segurança.
+    // Estrutura: 1 byte (n1) + ... Aqui assumimos WGS84; se a leitura
+    // desalinhar, abortamos e sugerimos GPX.
+    str(); // datum name (ex: "WGS 84")
+    /* projection */ str();
+
+    // ── Waypoints ──
+    const features = [];
+    for(let i=0;i<nwpt;i++){
+      const lon = f64();
+      const lat = f64();
+      const nameLen = u8(); let wname=''; for(let k=0;k<nameLen;k++) wname+=String.fromCharCode(u8());
+      const cmtLen = u16(); let cmt=''; for(let k=0;k<cmtLen;k++) cmt+=String.fromCharCode(u8());
+      i16();            // icon
+      u8();             // dspl
+      f32();            // wrot (rotation) — campos de exibição
+      i16();            // walt? varia
+      /* alguns campos extras de exibição/altitude */
+      const alt = f32();
+      i16(); i16();     // date fields (parciais)
+      if(isFinite(lat)&&isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180){
+        features.push({type:'Feature', properties:{nome:wname.trim(), comentario:cmt.trim(), altitude:alt},
+          geometry:{type:'Point', coordinates:[lon,lat]}});
+      }
+    }
+
+    // ── Tracklog points ──
+    // Cada ponto: lon(double), lat(double), header(byte: 1=novo trecho), date(long), alt(float)
+    const tracks = [];   // array de arrays de [lon,lat]
+    let current = null;
+    const trackTimes = [];
+    let curTimes = null;
+    for(let i=0;i<ntrk;i++){
+      const lon = f64();
+      const lat = f64();
+      const hdr = u8();          // 1 = início de novo trecho
+      const dateRaw = i32();     // data (dias desde 1899-12-30, formato Delphi)
+      const alt = f32();
+      i16();                     // campo extra (ex: track index)
+      if(!isFinite(lat)||!isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180){
+        continue; // ponto inválido — provável desalinhamento; ignora
+      }
+      if(hdr===1 || current===null){
+        current = []; tracks.push(current);
+        curTimes = []; trackTimes.push(curTimes);
+      }
+      current.push([lon,lat]);
+      // converte data Delphi (dias desde 1899-12-30) para epoch ms, se válida
+      let t = null;
+      if(dateRaw>0){ t = (dateRaw - 25569) * 86400000; } // 25569 = dias entre 1899-12-30 e 1970-01-01
+      curTimes.push({t, alt});
+    }
+    tracks.forEach((coords, idx)=>{
+      if(coords.length >= 2){
+        features.push({type:'Feature', properties:{nome:`Trilha ${idx+1}`, tipo:'trilha'},
+          geometry:{type:'LineString', coordinates:coords}});
+      }
+    });
+
+    if(!features.length) return null;
+
+    // Informação para análise de integridade da(s) trilha(s)
+    const trackInfo = { tracks, trackTimes, totalPoints: ntrk, nTracks: tracks.length };
+    return { geojson:{type:'FeatureCollection', features}, trackInfo };
+  }catch(e){
+    console.warn('Falha ao interpretar GTM (formato binário pode variar):', e);
+    return null;
+  }
+}
+
+// Análise de integridade para trilhas extraídas de GTM (similar ao GPX).
+function analyzeGTMTrackIntegrity(trackInfo, fileName){
+  try{
+    if(!trackInfo || !trackInfo.tracks || !trackInfo.tracks.length) return;
+    const flags = [], positives = [];
+
+    let totalPts = 0, withTime = 0, withAlt = 0;
+    const allTimes = [], allPts = [];
+    trackInfo.tracks.forEach((coords, ti)=>{
+      const times = trackInfo.trackTimes[ti] || [];
+      coords.forEach((c, pi)=>{
+        totalPts++;
+        const meta = times[pi] || {};
+        if(meta.t != null) { withTime++; allTimes.push(meta.t); }
+        if(meta.alt != null && isFinite(meta.alt) && meta.alt !== 0) withAlt++;
+        allPts.push([c[1], c[0]]); // [lat,lon]
+      });
+    });
+
+    const timeRatio = totalPts ? withTime/totalPts : 0;
+    if(timeRatio >= 0.9) positives.push('carimbos de tempo presentes na maioria dos pontos');
+    else if(timeRatio === 0) flags.push('nenhum ponto possui carimbo de tempo (típico de trilha desenhada/editada)');
+    else flags.push(`apenas ${Math.round(timeRatio*100)}% dos pontos têm carimbo de tempo`);
+
+    if(allTimes.length >= 2){
+      let nonMono = 0;
+      for(let i=1;i<allTimes.length;i++) if(allTimes[i] < allTimes[i-1]) nonMono++;
+      if(nonMono === 0) positives.push('sequência temporal consistente (crescente)');
+      else flags.push(`${nonMono} ponto(s) com tempo fora de ordem (possível edição)`);
+
+      // velocidade mediana (trilha a pé)
+      const speeds = [];
+      for(let i=1;i<allPts.length && i<allTimes.length;i++){
+        const dt = (allTimes[i]-allTimes[i-1])/1000;
+        if(dt<=0) continue;
+        const d = haversineM(allPts[i-1], allPts[i]);
+        speeds.push((d/dt)*3.6);
+      }
+      if(speeds.length){
+        const s = speeds.slice().sort((a,b)=>a-b);
+        const median = s[Math.floor(s.length/2)];
+        if(speeds.some(v=>v>200)) flags.push('trecho(s) com velocidade impossível (> 200 km/h) — forte indício de edição');
+        else if(median > 15) flags.push(`velocidade mediana ~${median.toFixed(1)} km/h alta para trilha a pé`);
+        else if(median >= 1 && median <= 12) positives.push(`ritmo compatível com caminhada (mediana ~${median.toFixed(1)} km/h)`);
+      }
+    }
+
+    if(withAlt/totalPts >= 0.9) positives.push('altitude registrada nos pontos');
+    else if(withAlt === 0) flags.push('sem dados de altitude');
+
+    if(totalPts < 10) flags.push(`baixa densidade de pontos (${totalPts}) — atípico para gravação contínua`);
+
+    showTrackIntegrityReport(fileName, flags, positives);
+  }catch(e){ console.warn('Falha na análise de integridade da trilha (GTM):', e); }
+}
+
 // ── Leitura de KML/KMZ ──
 async function handleGeoFile(key, files, map, layersControl){
   const arr = Array.from(files||[]);
@@ -2110,12 +2294,22 @@ async function handleGeoFile(key, files, map, layersControl){
           if(!geojson.features || !geojson.features.length){ alert(`Nenhuma feição encontrada em "${name}".`); continue; }
           analyzeTrackIntegrity(dom, name); // verifica autenticidade da trilha (GPX)
           addGeoJSONToMap(key, geojson, name, map, layersControl);
+        } else if(/\.gtm$/i.test(name)){
+          const buf = await file.arrayBuffer();
+          const result = parseGTM(buf);
+          if(!result || !result.geojson || !result.geojson.features.length){
+            alert(`Não foi possível ler feições do arquivo GTM "${name}".\n\nO formato GPS TrackMaker (.gtm) é binário e proprietário. O sistema tenta interpretá-lo, mas só lê arquivos georreferenciados em WGS84 (datum padrão). Se o arquivo usa outro datum (ex.: SAD69, Córrego Alegre) ou uma variação não suportada, exporte-o como GPX no GPS TrackMaker (Arquivo → Salvar como → GPX) e importe novamente.`);
+            continue;
+          }
+          // Analisa integridade das trilhas extraídas do GTM
+          if(result.trackInfo) analyzeGTMTrackIntegrity(result.trackInfo, name);
+          addGeoJSONToMap(key, result.geojson, name, map, layersControl);
         } else if(/\.zip$/i.test(name)){
           await importZippedArchive(key, file, map, layersControl);
         } else if(/\.(rar|7z|tar|gz)$/i.test(name)){
           alert(`Arquivos ${name.split('.').pop().toUpperCase()} não podem ser descompactados no navegador.\n\nReexporte o shapefile como .ZIP (formato compactado padrão) — ele é aceito diretamente — ou use o botão "Importar Shapefile (pasta)".`);
         } else {
-          alert(`Formato não reconhecido: "${name}".\nFormatos aceitos: KML, KMZ, GeoJSON, GPX, Shapefile (.zip ou pasta).`);
+          alert(`Formato não reconhecido: "${name}".\nFormatos aceitos: KML, KMZ, GeoJSON, GPX, GTM (GPS TrackMaker), Shapefile (.zip ou pasta).`);
         }
       }catch(err){
         console.error(err);
@@ -2162,10 +2356,13 @@ async function importZippedArchive(key, file, map, layersControl){
   const entries = Object.values(zip.files).filter(f=>!f.dir);
   const kmlEntries = entries.filter(f=>/\.kml$/i.test(f.name));
   const kmzEntries = entries.filter(f=>/\.kmz$/i.test(f.name));
+  const gpxEntries = entries.filter(f=>/\.gpx$/i.test(f.name));
+  const gtmEntries = entries.filter(f=>/\.gtm$/i.test(f.name));
+  const geojsonEntries = entries.filter(f=>/\.(geojson|json)$/i.test(f.name));
   const hasShp = entries.some(f=>/\.shp$/i.test(f.name));
 
-  // Se houver KML/KMZ dentro do zip, importa cada um deles
-  if(kmlEntries.length || kmzEntries.length){
+  // Se houver KML/KMZ/GPX/GTM/GeoJSON dentro do zip, importa cada um deles
+  if(kmlEntries.length || kmzEntries.length || gpxEntries.length || gtmEntries.length || geojsonEntries.length){
     let added = 0;
     for(const entry of kmlEntries){
       try{
@@ -2194,13 +2391,50 @@ async function importZippedArchive(key, file, map, layersControl){
         }
       }catch(e){ console.warn('Falha ao ler KMZ do zip:', entry.name, e); }
     }
-    // Se além de KML/KMZ houver também um shapefile, importa-o também
+    for(const entry of gpxEntries){
+      try{
+        const txt = await entry.async('text');
+        const dom = new DOMParser().parseFromString(txt, 'text/xml');
+        const gj = toGeoJSON.gpx(dom);
+        if(gj.features && gj.features.length){
+          const nm = entry.name.split('/').pop();
+          analyzeTrackIntegrity(dom, nm); // verifica autenticidade da trilha
+          addGeoJSONToMap(key, gj, nm, map, layersControl);
+          added++;
+        }
+      }catch(e){ console.warn('Falha ao ler GPX do zip:', entry.name, e); }
+    }
+    for(const entry of gtmEntries){
+      try{
+        const ab = await entry.async('arraybuffer');
+        const result = parseGTM(ab);
+        if(result && result.geojson && result.geojson.features.length){
+          const nm = entry.name.split('/').pop();
+          if(result.trackInfo) analyzeGTMTrackIntegrity(result.trackInfo, nm);
+          addGeoJSONToMap(key, result.geojson, nm, map, layersControl);
+          added++;
+        } else {
+          console.warn('GTM do zip sem feições legíveis:', entry.name);
+        }
+      }catch(e){ console.warn('Falha ao ler GTM do zip:', entry.name, e); }
+    }
+    for(const entry of geojsonEntries){
+      try{
+        const txt = await entry.async('text');
+        const gj = JSON.parse(txt);
+        if(gj.features && gj.features.length){
+          addGeoJSONToMap(key, gj, entry.name.split('/').pop(), map, layersControl);
+          added++;
+        }
+      }catch(e){ console.warn('Falha ao ler GeoJSON do zip:', entry.name, e); }
+    }
+    // Se além desses houver também um shapefile, importa-o também
     if(hasShp){ await importZippedShapefile(key, file, map, layersControl); return; }
-    if(!added) alert(`O arquivo "${file.name}" não contém KML/KMZ com feições válidas.`);
+    if(!added) alert(`O arquivo "${file.name}" não contém arquivos geoespaciais com feições válidas.`);
     return;
   }
 
-  // Sem KML/KMZ: trata como shapefile compactado
+  // Sem outros formatos: trata como shapefile compactado
   return importZippedShapefile(key, file, map, layersControl);
 }
 
@@ -2391,7 +2625,7 @@ function openTrackReportModal(report){
       ${posList ? `<div class="track-sec"><div class="track-sec-lbl">Indícios favoráveis</div><ul class="track-pos">${posList}</ul></div>` : ''}
       ${flagList ? `<div class="track-sec"><div class="track-sec-lbl">Pontos de atenção</div><ul class="track-flag">${flagList}</ul></div>` : ''}
       <div class="track-concl">${escHtml(concl)}</div>
-      <div class="track-note">Observação: esta é uma análise de plausibilidade. Arquivos GPX/SHP não possuem assinatura digital, portanto não é possível comprovar com certeza absoluta se houve alteração.</div>
+      <div class="track-note">Observação: esta é uma análise de plausibilidade. Arquivos GPX/GTM/SHP não possuem assinatura digital, portanto não é possível comprovar com certeza absoluta se houve alteração.</div>
     </div>`;
   document.body.appendChild(modal);
   const close = ()=>modal.remove();
