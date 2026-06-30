@@ -489,6 +489,7 @@ function buildMap(divId, key) {
   //      correspondente.
   // ══════════════════════════════════════════════════════════════════
   const WMS_LAYERS_PRIMARY = [
+    {nome:'IPHAN - ADA (SAIP)',                                              url:'https://geoserver.iphan.gov.br/geoserver/fca/wms',  layer:'fca:ada_saip_teste', tipo:'poligono', version:'1.1.0', gfiSrs:'EPSG:4674', wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/fca/ows', typeName:'fca:ada_saip_teste', srsName:'EPSG:4674'}},
     {nome:'IPHAN - FCA (Empreendimentos cadastrados)',                      url:'https://geoserver.iphan.gov.br/geoserver/fca/wms',  layer:'fca:fca', tipo:'poligono', wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/fca/ows', typeName:'fca:fca'}},
     {nome:'IPHAN - Sítios Arqueológicos (SICG)',            url:'https://geoserver.iphan.gov.br/geoserver/SICG/wms', layer:'SICG:sitios', tipo:'ponto', wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/SICG/ows', typeName:'SICG:sitios'}},
     {nome:'IPHAN - Polígonos de Sítios Arqueológicos (SICG)',  url:'https://geoserver.iphan.gov.br/geoserver/SICG/wms', layer:'SICG:sitios_pol', tipo:'poligono', wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/SICG/ows', typeName:'SICG:sitios_pol'}},
@@ -2625,7 +2626,7 @@ function openTrackReportModal(report){
       ${posList ? `<div class="track-sec"><div class="track-sec-lbl">Indícios favoráveis</div><ul class="track-pos">${posList}</ul></div>` : ''}
       ${flagList ? `<div class="track-sec"><div class="track-sec-lbl">Pontos de atenção</div><ul class="track-flag">${flagList}</ul></div>` : ''}
       <div class="track-concl">${escHtml(concl)}</div>
-      <div class="track-note">Observação: esta é uma análise de plausibilidade. Arquivos GPX/GTM/SHP não possuem assinatura digital, portanto não é possível comprovar com certeza absoluta se houve alteração.</div>
+      <div class="track-note">Observação: esta é uma análise de plausibilidade. Arquivos GPX/SHP não possuem assinatura digital, portanto não é possível comprovar com certeza absoluta se houve alteração.</div>
     </div>`;
   document.body.appendChild(modal);
   const close = ()=>modal.remove();

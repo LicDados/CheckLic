@@ -523,10 +523,14 @@ label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
 
 /* ── Painel separado de camadas enviadas (canto superior esquerdo) ── */
 .upload-layers-control{
-  max-height:260px;overflow-y:auto;overflow-x:hidden;
+  overflow:hidden;
   width:240px;max-width:calc(100vw - 90px);
 }
-.upload-layers-control .leaflet-control-layers-list{width:100%}
+.upload-layers-control .leaflet-control-layers-list{width:100%;overflow:hidden}
+/* Apenas a lista de camadas rola; o título "Camadas enviadas" fica fixo */
+.upload-layers-control .leaflet-control-layers-overlays{
+  max-height:240px;overflow-y:auto;overflow-x:hidden;display:block;
+}
 /* Nomes longos quebram em várias linhas em vez de estourar o painel */
 .upload-layers-control label{
   display:flex!important;align-items:flex-start;gap:6px;
@@ -630,6 +634,16 @@ label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
   padding:6px 14px;font-size:12px;color:var(--muted);
   font-family:var(--fb);flex-wrap:nowrap;overflow:hidden;
   pointer-events:none;
+}
+/* Copyright da camada base (OpenStreetMap/Esri): elevado acima do rodapé
+   para não ficar oculto pela faixa de coordenadas/escala. */
+.leaflet-bottom.leaflet-right .leaflet-control-attribution{
+  margin-bottom:40px;
+  background:rgba(255,255,255,.85);
+  border-radius:6px;
+  padding:2px 6px;
+  font-size:10px;
+  box-shadow:0 1px 3px rgba(0,0,0,.15);
 }
 .map-footer .mf-item{display:flex;align-items:center;gap:6px;white-space:nowrap}
 .map-footer .mf-item b{color:var(--text);font-weight:600;font-family:monospace;display:inline-block;text-align:left}
