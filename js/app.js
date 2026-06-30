@@ -602,7 +602,8 @@ function buildMap(divId, key) {
       transparent: true,
       version: def.version || '1.1.1',
       maxZoom: 22,
-      attribution: def.nome,
+      // Sem 'attribution': o campo de copyright do mapa deve exibir apenas as
+      // camadas BASE (OpenStreetMap / Esri), não as camadas WMS sobrepostas.
     };
     if(pane) opts.pane = pane;
     // Para serviços ArcGIS Server (ex: SNIRH), aumentar o DPI faz o servidor
