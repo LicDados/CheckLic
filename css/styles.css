@@ -315,7 +315,21 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);font-size:14px
 .copy-coord-btn.copied{border-color:var(--green-bdr);background:var(--green-bg);color:var(--green)}
 .rich-popup .copy-coord-btn{width:20px;height:20px;font-size:11px}
 .fname-cell{max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
-.pane-right{flex:1;position:relative}
+.pane-right{flex:1;position:relative;min-width:0}
+
+/* ── Divisória ajustável entre a tabela/camadas e o mapa ── */
+.pane-divider{
+  flex:0 0 6px;width:6px;cursor:col-resize;background:var(--border);
+  position:relative;z-index:5;transition:background .15s;
+  align-self:stretch;
+}
+.pane-divider:hover,.pane-divider.dragging{background:var(--accent)}
+.pane-divider::before{
+  content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:2px;height:34px;border-radius:2px;background:var(--muted);opacity:.5;
+}
+.pane-divider:hover::before,.pane-divider.dragging::before{background:#fff;opacity:.9}
+body.resizing-panes{cursor:col-resize!important;user-select:none!important}
 
 /* ═══════════════════════════════════════
    UPLOAD PANEL
@@ -531,14 +545,28 @@ label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
 .upload-layers-control .leaflet-control-layers-overlays{
   max-height:240px;overflow-y:auto;overflow-x:hidden;display:block;
 }
-/* Nomes longos quebram em várias linhas em vez de estourar o painel */
+/* Nomes longos quebram em várias linhas em vez de estourar o painel.
+   O Leaflet insere o checkbox e o texto dentro de um wrapper (<div> ou <span>)
+   dentro do <label>. Forçamos esse wrapper a ser um flex horizontal para que o
+   checkbox fique sempre À ESQUERDA do nome, e o nome ocupe o espaço restante,
+   quebrando em linhas quando for longo — nunca empilhando por baixo do checkbox. */
 .upload-layers-control label{
-  display:flex!important;align-items:flex-start;gap:6px;
+  display:block!important;width:100%;
 }
-.upload-layers-control label span{
+.upload-layers-control label > div,
+.upload-layers-control label > span{
+  display:flex!important;flex-wrap:nowrap!important;align-items:flex-start;gap:6px;
+  width:100%;min-width:0;
+}
+.upload-layers-control label input[type="checkbox"]{
+  margin-top:3px;flex:0 0 auto;
+}
+/* O texto da camada (último span dentro do wrapper) ocupa o espaço restante */
+.upload-layers-control label > div > span,
+.upload-layers-control label > span > span{
+  flex:1 1 auto;min-width:0;
   white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.35;
 }
-.upload-layers-control label input[type="checkbox"]{margin-top:3px;flex-shrink:0}
 .upload-layers-control .leaflet-control-layers-list::before{
   content:'Camadas enviadas';
   display:block;font-family:var(--fh);font-size:11px;font-weight:600;
@@ -645,8 +673,52 @@ label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
   font-size:10px;
   box-shadow:0 1px 3px rgba(0,0,0,.15);
 }
+/* Indicador de EPSG (CRS exibido no webmap): logo ABAIXO do copyright,
+   no canto inferior direito, acima da faixa do rodapé. */
+/* EPSG dentro da faixa do rodapé, empurrado para a extremidade DIREITA
+   (logo abaixo do copyright, que fica no canto inferior direito do mapa). */
+.map-footer .mf-epsg{
+  margin-left:auto;flex-shrink:0;
+  pointer-events:auto;cursor:pointer;
+  display:flex;align-items:center;gap:5px;
+  color:var(--text);font-family:monospace;font-size:12px;font-weight:600;
+  background:var(--card2);border:1px solid var(--border2);border-radius:6px;
+  padding:2px 8px;transition:border-color .15s,background .15s;
+}
+.map-footer .mf-epsg:hover{border-color:var(--accent);background:var(--accent-bg);color:var(--accent-lt)}
 .map-footer .mf-item{display:flex;align-items:center;gap:6px;white-space:nowrap}
 .map-footer .mf-item b{color:var(--text);font-weight:600;font-family:monospace;display:inline-block;text-align:left}
+/* Campos editáveis (Coordenadas e Escala) precisam receber clique/edição */
+.map-footer .mf-item b#coord-conv,.map-footer .mf-item b#coord-ext,.map-footer .mf-item b#coord-inf,
+/* ── Campos persistentes de Coordenadas e Escala (esquema QGIS) ── */
+.map-footer .mf-coord-input,.map-footer .mf-scale-input{
+  pointer-events:auto;
+  font-family:monospace;font-size:12px;font-weight:600;color:var(--text);
+  background:var(--card2);border:1px solid var(--border2);border-radius:4px;
+  padding:1px 6px;outline:none;transition:border-color .12s,background .12s;
+}
+.map-footer .mf-coord-input{width:190px}
+.map-footer .mf-scale-input{width:96px}
+.map-footer .mf-coord-input:hover,.map-footer .mf-scale-input:hover{border-color:var(--accent)}
+.map-footer .mf-coord-input:focus,.map-footer .mf-scale-input:focus{
+  border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)
+}
+.map-footer .mf-coord-input.mf-invalid,.map-footer .mf-scale-input.mf-invalid{
+  border-color:var(--red);box-shadow:0 0 0 1px var(--red)
+}
+.map-footer .mf-coord-input.mf-flash,.map-footer .mf-scale-input.mf-flash{
+  border-color:var(--green-bdr);background:var(--green-bg)
+}
+.map-footer .mf-scale-prefix{color:var(--muted);font-family:monospace;font-size:12px;font-weight:600}
+/* Campo de Zoom (lupa) — input numérico com setas no rodapé */
+.map-footer .mf-zoom-input{
+  pointer-events:auto;width:52px;
+  font-family:monospace;font-size:12px;font-weight:600;color:var(--text);
+  background:var(--card2);border:1px solid var(--border2);border-radius:4px;
+  padding:1px 4px;outline:none;
+}
+.map-footer .mf-zoom-input:focus{border-color:var(--accent)}
+.map-footer .mf-zoom-pct{color:var(--muted);font-size:12px;font-weight:600;margin-left:-2px}
 #coord-conv,#coord-ext,#coord-inf{min-width:170px}
 #scale-conv,#scale-ext,#scale-inf{min-width:90px}
 .map-footer .mf-sep{width:1px;height:14px;background:var(--border2);flex-shrink:0}
@@ -806,6 +878,10 @@ label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
 .track-flag li{color:#e0a33b}
 .track-concl{font-size:13px;color:var(--text);line-height:1.55;margin:10px 0;padding:10px;background:var(--card2);border-radius:8px}
 .track-note{font-size:11px;font-style:italic;color:var(--muted);line-height:1.5;border-top:1px solid var(--border);padding-top:10px}
+.epsg-table{width:100%;border-collapse:collapse;font-size:13px}
+.epsg-table td{padding:4px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+.epsg-table td:first-child{color:var(--muted);white-space:nowrap;width:34%}
+.epsg-table tr:last-child td{border-bottom:none}
 .geo-upload-input{display:none}
 .map-wrap{position:relative;width:100%;height:100%}
 

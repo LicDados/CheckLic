@@ -489,12 +489,12 @@ function buildMap(divId, key) {
   //      correspondente.
   // ══════════════════════════════════════════════════════════════════
   const WMS_LAYERS_PRIMARY = [
-    {nome:'IPHAN - ADA (SAIP)',                                              url:'https://geoserver.iphan.gov.br/geoserver/fca/wms',  layer:'fca:ada_saip_teste', tipo:'poligono', version:'1.1.0', gfiSrs:'EPSG:4674', wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/fca/ows', typeName:'fca:ada_saip_teste', srsName:'EPSG:4674'}},
-    {nome:'IPHAN - FCA (Empreendimentos cadastrados)',                      url:'https://geoserver.iphan.gov.br/geoserver/fca/wms',  layer:'fca:fca', tipo:'poligono', wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/fca/ows', typeName:'fca:fca'}},
-    {nome:'IPHAN - Sítios Arqueológicos (SICG)',            url:'https://geoserver.iphan.gov.br/geoserver/SICG/wms', layer:'SICG:sitios', tipo:'ponto', wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/SICG/ows', typeName:'SICG:sitios'}},
-    {nome:'IPHAN - Polígonos de Sítios Arqueológicos (SICG)',  url:'https://geoserver.iphan.gov.br/geoserver/SICG/wms', layer:'SICG:sitios_pol', tipo:'poligono', wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/SICG/ows', typeName:'SICG:sitios_pol'}},
-    {nome:'IPHAN - Bens Materiais (SICG)',url:'https://geoserver.iphan.gov.br/geoserver/SICG/wms', layer:'SICG:tg_bem_classificacao', tipo:'ponto', wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/SICG/ows', typeName:'SICG:tg_bem_classificacao'}},
-    {nome:'IPHAN - Bens Imateriais (SICG)',   url:'https://geoserver.iphan.gov.br/geoserver/SICG/wms', layer:'SICG:tg_bem_imaterial', tipo:'ponto', wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/SICG/ows', typeName:'SICG:tg_bem_imaterial'}},
+    {nome:'IPHAN - ADA (SAIP)',                                              url:'https://geoserver.iphan.gov.br/geoserver/fca/wms',  layer:'fca:ada_saip_teste', tipo:'poligono', corsBlocked:true, version:'1.1.0', gfiSrs:'EPSG:4674', wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/fca/ows', typeName:'fca:ada_saip_teste', srsName:'EPSG:4674'}},
+    {nome:'IPHAN - FCA (Empreendimentos cadastrados)',                      url:'https://geoserver.iphan.gov.br/geoserver/fca/wms',  layer:'fca:fca', tipo:'poligono', corsBlocked:true, wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/fca/ows', typeName:'fca:fca'}},
+    {nome:'IPHAN - Sítios Arqueológicos (SICG)',            url:'https://geoserver.iphan.gov.br/geoserver/SICG/wms', layer:'SICG:sitios', tipo:'ponto', corsBlocked:true, wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/SICG/ows', typeName:'SICG:sitios'}},
+    {nome:'IPHAN - Polígonos de Sítios Arqueológicos (SICG)',  url:'https://geoserver.iphan.gov.br/geoserver/SICG/wms', layer:'SICG:sitios_pol', tipo:'poligono', corsBlocked:true, wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/SICG/ows', typeName:'SICG:sitios_pol'}},
+    {nome:'IPHAN - Bens Materiais (SICG)',url:'https://geoserver.iphan.gov.br/geoserver/SICG/wms', layer:'SICG:tg_bem_classificacao', tipo:'ponto', corsBlocked:true, wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/SICG/ows', typeName:'SICG:tg_bem_classificacao'}},
+    {nome:'IPHAN - Bens Imateriais (SICG)',   url:'https://geoserver.iphan.gov.br/geoserver/SICG/wms', layer:'SICG:tg_bem_imaterial', tipo:'ponto', corsBlocked:true, wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/SICG/ows', typeName:'SICG:tg_bem_imaterial'}},
     {nome:'ANA - Hidrografia (SNIRH)',                  url:'https://www.snirh.gov.br/arcgis/services/INDE/Camadas/MapServer/WMSServer', layer:'106', clickTolerance:8, dpi:180, noJsonp:true, tipo:'linear'},
     {nome:'IBGE - Localidades Indígenas (Censo 2022)',      url:'https://geoservicoscenso2022.ibge.gov.br/geoserver/censo2022/ows', layer:'cete_BR_LIs_CD2022_02062025', tipo:'poligono'},
     {nome:'IBGE - Locais de Concentração de Pessoas Indígenas (Censo 2022)',url:'https://geoservicoscenso2022.ibge.gov.br/geoserver/censo2022/ows', layer:'cete_BR_LCPIs_CD2022_02062025', tipo:'ponto'},
@@ -509,9 +509,9 @@ function buildMap(divId, key) {
     {nome:'DNIT - Rodovias',      url:'https://geoservicos.inde.gov.br/geoserver/DNIT/ows', layer:'cide_2024_25,snv_202507a', tipo:'linear'},
     {nome:'ICMBio - Cavidades Naturais Subterrâneas', url:'https://geoservicos.inde.gov.br/geoserver/ICMBio/ows', layer:'canie_052026_p', tipo:'ponto'},
     {nome:'ICMBio - UCs Federais',  url:'https://geoservicos.inde.gov.br/geoserver/ICMBio/ows', layer:'limiteucsfederais_a', tipo:'poligono'},
-    {nome:'FUNAI - Aldeias Indígenas',         url:'https://geoserver.funai.gov.br/geoserver/Funai/wms', layer:'Funai:aldeias_pontos', tipo:'ponto', wfsFallback:{url:'https://geoserver.funai.gov.br/geoserver/Funai/ows', typeName:'Funai:aldeias_pontos'}},    
-    {nome:'FUNAI - Terras Indígenas', url:'https://geoserver.funai.gov.br/geoserver/Funai/wms', layer:'Funai:tis_poligonais', tipo:'poligono', wfsFallback:{url:'https://geoserver.funai.gov.br/geoserver/Funai/ows', typeName:'Funai:tis_poligonais'}},
-    {nome:'SNIF/SFB - Diversos/2024 (INCRA/FUNAI/ICMBio/Órgãos estaduais)',  url:'https://sistemas.florestal.gov.br/geoserver/snif/wms', layer:'snif:cnfp_2024', tipo:'poligono', gfiSrs:'EPSG:4674',
+    {nome:'FUNAI - Aldeias Indígenas',         url:'https://geoserver.funai.gov.br/geoserver/Funai/wms', layer:'Funai:aldeias_pontos', tipo:'ponto', corsBlocked:true, wfsFallback:{url:'https://geoserver.funai.gov.br/geoserver/Funai/ows', typeName:'Funai:aldeias_pontos'}},    
+    {nome:'FUNAI - Terras Indígenas', url:'https://geoserver.funai.gov.br/geoserver/Funai/wms', layer:'Funai:tis_poligonais', tipo:'poligono', corsBlocked:true, wfsFallback:{url:'https://geoserver.funai.gov.br/geoserver/Funai/ows', typeName:'Funai:tis_poligonais'}},
+    {nome:'SNIF/SFB - Diversos/2024 (INCRA/FUNAI/ICMBio/Órgãos estaduais)',  url:'https://sistemas.florestal.gov.br/geoserver/snif/wms', layer:'snif:cnfp_2024', tipo:'poligono', corsBlocked:true, gfiSrs:'EPSG:4674',
       wfsFallback:{url:'https://sistemas.florestal.gov.br/geoserver/snif/ows', typeName:'snif:cnfp_2024', srsName:'EPSG:4674'}},
     // Camada combinada: naufrágios (DPHDM) — todas as camadas estaduais
     // agrupadas em uma única entrada via lista separada por vírgulas (GeoServer)
@@ -766,7 +766,7 @@ function buildMap(divId, key) {
       try{
         let data;
         const reqUrl = def.url + '?' + params.toString();
-        let resp = await fetchWithCorsFallback(reqUrl);
+        let resp = await fetchWithCorsFallback(reqUrl, def.corsBlocked);
         if(resp && resp.ok){
           try{ data = await resp.json(); }
           catch(parseErr){ data = null; } // resposta não é JSON válido (ex: HTML/erro)
@@ -780,7 +780,7 @@ function buildMap(divId, key) {
 
         if(!data || !data.features || !data.features.length){
           // Fallback 1: tenta info_format=text/html e extrai a primeira tabela
-          const rowsFromHtml = await htmlGetFeatureInfo(def.url, params);
+          const rowsFromHtml = await htmlGetFeatureInfo(def.url, params, def.corsBlocked);
           console.info(`[GeoTools] ${def.nome}: tentativa HTML`, rowsFromHtml ? `retornou ${rowsFromHtml.length} linhas` : 'sem retorno');
           if(rowsFromHtml && rowsFromHtml.length){
             openInfoPopup(latlng, `🗺️ ${def.nome}`, rowsFromHtml);
@@ -790,7 +790,7 @@ function buildMap(divId, key) {
           // Fallback 2: consulta WFS espacial (bbox pequeno em torno do clique) —
           // leve, pois retorna apenas as feições próximas ao ponto clicado.
           if(def.wfsFallback){
-            const rowsFromWfs = await wfsSpatialQuery(def.wfsFallback, latlng);
+            const rowsFromWfs = await wfsSpatialQuery(def.wfsFallback, latlng, def.corsBlocked);
             console.info(`[GeoTools] ${def.nome}: tentativa WFS`, rowsFromWfs ? `retornou ${rowsFromWfs.length} linhas` : 'sem retorno');
             if(rowsFromWfs && rowsFromWfs.length){
               openInfoPopup(latlng, `🗺️ ${def.nome}`, rowsFromWfs);
@@ -847,11 +847,11 @@ function buildMap(divId, key) {
   // Fallback final: info_format=text/html — extrai a primeira tabela de
   // atributos retornada pelo GeoServer (útil quando JSON/JSONP não estão
   // disponíveis para a camada).
-  async function htmlGetFeatureInfo(url, params){
+  async function htmlGetFeatureInfo(url, params, skipDirect){
     try{
       const p = new URLSearchParams(params);
       p.set('info_format','text/html');
-      const resp = await fetchWithCorsFallback(url + '?' + p.toString());
+      const resp = await fetchWithCorsFallback(url + '?' + p.toString(), skipDirect);
       if(!resp || !resp.ok) return null;
       const html = await resp.text();
       if(!html || !/<table/i.test(html)) return null;
@@ -882,13 +882,19 @@ function buildMap(divId, key) {
     u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
     u => 'https://thingproxy.freeboard.io/fetch/' + u,
   ];
-  async function fetchWithCorsFallback(url){
-    // 1ª tentativa: requisição direta (funciona se o servidor enviar CORS)
-    try{
-      const r = await fetch(url);
-      if(r && r.ok) return r;
-    }catch(err){
-      if(!(err instanceof TypeError)) throw err;
+  async function fetchWithCorsFallback(url, skipDirect){
+    // 1ª tentativa: requisição direta (funciona se o servidor enviar CORS).
+    // Para servidores que SABIDAMENTE não enviam o cabeçalho CORS
+    // (IPHAN, FUNAI, SNIF/SFB), pulamos esta tentativa para evitar o erro
+    // de CORS no console — que é emitido pelo próprio navegador e não pode
+    // ser silenciado por JavaScript. Vamos direto à cascata de proxies.
+    if(!skipDirect){
+      try{
+        const r = await fetch(url);
+        if(r && r.ok) return r;
+      }catch(err){
+        if(!(err instanceof TypeError)) throw err;
+      }
     }
     // 2ª: cascata de proxies CORS
     for(const make of CORS_PROXIES){
@@ -900,7 +906,7 @@ function buildMap(divId, key) {
     return null;
   }
 
-  async function wfsSpatialQuery(wfsDef, latlng){
+  async function wfsSpatialQuery(wfsDef, latlng, skipDirect){
     const d = 0.0008; // ~80-90m em graus, suficiente para um clique
     const srs = wfsDef.srsName || 'EPSG:4326';
     const bbox = `${latlng.lng-d},${latlng.lat-d},${latlng.lng+d},${latlng.lat+d},${srs}`;
@@ -913,7 +919,7 @@ function buildMap(divId, key) {
       BBOX: bbox,
     });
     try{
-      const resp = await fetchWithCorsFallback(wfsDef.url + '?' + params.toString());
+      const resp = await fetchWithCorsFallback(wfsDef.url + '?' + params.toString(), skipDirect);
       if(!resp || !resp.ok) return null;
       const data = await resp.json();
       if(!data.features || !data.features.length) return null;
@@ -1008,34 +1014,166 @@ function buildMap(divId, key) {
   m.on('mousemove', e => {
     const el = document.getElementById('coord-'+key);
     if(!el) return;
-    // Não atualiza quando o cursor está sobre a faixa do rodapé
+    if(el === document.activeElement) return; // usuário digitando: não sobrescreve
+    // Sobre a faixa do rodapé: não atualiza, mas MANTÉM a última coordenada
     const footer = document.getElementById('footer-'+key);
     if(footer){
       const fr = footer.getBoundingClientRect();
       const oe = e.originalEvent;
       if(oe && oe.clientY >= fr.top && oe.clientX >= fr.left && oe.clientX <= fr.right){
-        el.textContent = '—';
-        return;
+        return; // preserva o último valor exibido
       }
     }
-    el.textContent = `${e.latlng.lat.toFixed(6)}°, ${e.latlng.lng.toFixed(6)}°`;
+    el.value = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
   });
-  m.on('mouseout', () => {
-    const el = document.getElementById('coord-'+key);
-    if(el) el.textContent = '—';
-  });
+  // Ao sair do mapa, mantém a ÚLTIMA coordenada exibida (não reseta),
+  // permitindo que o usuário edite a partir dela.
 
-  // ── Rodapé: escala ──
+  // ── Rodapé: escala (mostra apenas o denominador; o "1 :" é fixo no HTML) ──
   function updateScale(k){
     const el = document.getElementById('scale-'+k);
     if(!el) return;
+    if(el === document.activeElement) return; // usuário digitando: não sobrescreve
     const center = m.getCenter();
     const zoom = m.getZoom();
     const metersPerPixel = 156543.03392 * Math.cos(center.lat*Math.PI/180) / Math.pow(2, zoom);
     let scaleDenom = Math.round(metersPerPixel / 0.00028); // 0.00028m = pixel padrão (96dpi)
-    el.textContent = `1 : ${scaleDenom.toLocaleString('pt-BR')}`;
+    el.value = scaleDenom.toLocaleString('pt-BR');
   }
   m.on('zoomend moveend load', () => updateScale(key));
+
+  // Inicializa o campo de coordenadas com o CENTRO do mapa, para que exiba uma
+  // coordenada válida antes de qualquer movimento do cursor.
+  function initCoordDisplay(){
+    const el = document.getElementById('coord-'+key);
+    if(el && el !== document.activeElement && !el.value){
+      const c = m.getCenter();
+      el.value = `${c.lat.toFixed(6)}, ${c.lng.toFixed(6)}`;
+    }
+  }
+  m.on('load', initCoordDisplay);
+  setTimeout(initCoordDisplay, 300);
+
+  // ── Rodapé editável: clicar em Coordenadas ou Escala permite digitar um
+  //    valor e reposicionar o mapa. ──
+  function setupEditableFooter(){
+    const coordEl = document.getElementById('coord-'+key);
+    const scaleEl = document.getElementById('scale-'+key);
+
+    // Reposiciona o mapa a partir de "lat, lon" digitado
+    function applyCoord(txt){
+      // aceita formatos: "-15.79, -47.88", "-15.79°, -47.88°", "-15.79 -47.88"
+      const nums = (txt||'').replace(/°/g,'').match(/-?\d+(?:[.,]\d+)?/g);
+      if(!nums || nums.length < 2) return false;
+      const lat = parseFloat(nums[0].replace(',','.'));
+      const lon = parseFloat(nums[1].replace(',','.'));
+      if(!isFinite(lat)||!isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180) return false;
+      const z = Math.max(m.getZoom(), 14);
+      m.setView([lat,lon], z);
+      // marcador temporário para indicar o ponto
+      if(m._gotoMarker){ try{ m.removeLayer(m._gotoMarker); }catch(e){} }
+      m._gotoMarker = L.circleMarker([lat,lon], {radius:8, color:'#ff5b5b', weight:2, fillColor:'#ff5b5b', fillOpacity:0.5}).addTo(m);
+      setTimeout(()=>{ if(m._gotoMarker){ try{ m.removeLayer(m._gotoMarker); }catch(e){} m._gotoMarker=null; } }, 4000);
+      return true;
+    }
+
+    // Ajusta o zoom a partir de uma escala "1 : N" (ou só "N") digitada
+    function applyScale(txt){
+      const m2 = (txt||'').replace(/\./g,'').replace(/\s/g,'').match(/(\d+)\s*$/);
+      const denom = m2 ? parseInt(m2[1],10) : NaN;
+      if(!isFinite(denom) || denom < 1) return false;
+      const center = m.getCenter();
+      // inverte a fórmula da escala para obter o zoom
+      const metersPerPixel = denom * 0.00028;
+      const zoom = Math.log2(156543.03392 * Math.cos(center.lat*Math.PI/180) / metersPerPixel);
+      const clamped = Math.min(Math.max(zoom, m.getMinZoom()||0), m.getMaxZoom()||22);
+      m.setZoom(clamped);
+      return true;
+    }
+
+    function makeEditable(el, kind){
+      // Não usado no esquema QGIS (campos já são inputs persistentes).
+    }
+    // ── Coordenadas (esquema QGIS): input persistente que mostra a coordenada
+    //    sob o cursor ao vivo. O usuário pode clicar e digitar "lat, lon"; o
+    //    mapa só é reposicionado ao teclar ENTER. Ao mover o cursor novamente,
+    //    a exibição ao vivo é retomada. ──
+    if(coordEl){
+      const commitCoord = ()=>{
+        const ok = applyCoord(coordEl.value);
+        if(ok){
+          coordEl.classList.remove('mf-invalid');
+          coordEl.classList.add('mf-flash');
+          setTimeout(()=>coordEl.classList.remove('mf-flash'), 500);
+          coordEl.blur();
+        } else {
+          coordEl.classList.add('mf-invalid');
+        }
+      };
+      coordEl.addEventListener('keydown', e=>{
+        e.stopPropagation();
+        if(e.key==='Enter'){ e.preventDefault(); commitCoord(); }
+        else if(e.key==='Escape'){ coordEl.classList.remove('mf-invalid'); coordEl.blur(); }
+        else { coordEl.classList.remove('mf-invalid'); }
+      });
+    }
+
+    // ── Escala (esquema QGIS): input persistente com denominador. O usuário
+    //    digita o valor e o mapa ajusta o zoom ao teclar ENTER. ──
+    if(scaleEl){
+      const commitScale = ()=>{
+        const ok = applyScale(scaleEl.value);
+        if(ok){
+          scaleEl.classList.remove('mf-invalid');
+          scaleEl.blur();
+          updateScale(key);
+        } else {
+          scaleEl.classList.add('mf-invalid');
+        }
+      };
+      scaleEl.addEventListener('keydown', e=>{
+        e.stopPropagation();
+        if(e.key==='Enter'){ e.preventDefault(); commitScale(); }
+        else if(e.key==='Escape'){ scaleEl.classList.remove('mf-invalid'); updateScale(key); scaleEl.blur(); }
+        else { scaleEl.classList.remove('mf-invalid'); }
+      });
+      // ao sair sem Enter, restaura o valor atual (não reposiciona)
+      scaleEl.addEventListener('blur', ()=>{ setTimeout(()=>updateScale(key), 10); });
+    }
+
+    // ── Campo de Zoom (lupa) — exibido em PORCENTAGEM (0% = zoom mínimo,
+    //    100% = zoom máximo). ──
+    const zoomEl = document.getElementById('zoom-'+key);
+    if(zoomEl){
+      let editingZoom = false;
+      const zMin = ()=> m.getMinZoom()||0;
+      const zMax = ()=> m.getMaxZoom()||22;
+      const zoomToPct = z => Math.round(((z - zMin())/(zMax() - zMin()))*100);
+      const pctToZoom = p => zMin() + (p/100)*(zMax() - zMin());
+      // Sincroniza o campo (%) com o zoom atual do mapa
+      const syncZoom = ()=>{
+        if(editingZoom) return; // não sobrescreve durante edição
+        zoomEl.value = zoomToPct(m.getZoom());
+      };
+      m.on('zoomend load', syncZoom);
+      syncZoom();
+      // Aplica a porcentagem digitada/ajustada pelas setas, convertendo em zoom
+      const applyZoom = ()=>{
+        let p = parseInt(zoomEl.value, 10);
+        if(!isFinite(p)) { syncZoom(); return; }
+        p = Math.min(Math.max(p, 0), 100);
+        m.setZoom(pctToZoom(p));
+      };
+      zoomEl.addEventListener('focus', ()=>{ editingZoom = true; });
+      zoomEl.addEventListener('blur', ()=>{ editingZoom = false; applyZoom(); });
+      zoomEl.addEventListener('change', applyZoom); // setas ↑↓ disparam change
+      zoomEl.addEventListener('keydown', e=>{
+        e.stopPropagation();
+        if(e.key==='Enter'){ applyZoom(); zoomEl.blur(); }
+      });
+    }
+  }
+  setupEditableFooter();
 
   // ── Clique no mapa: se Limites Estaduais/Municipais não estiverem
   //    ativos e o clique não atingir outra camada, exibe coordenadas ──
@@ -1073,8 +1211,81 @@ function buildMap(divId, key) {
 
   setTimeout(() => { m.invalidateSize(); updateScale(key); adjustLayersMaxHeight(); }, 200);
 
+  // Divisória ajustável entre a tabela/camadas (pane-left) e o mapa (pane-right)
+  setupResizableDivider(key, m);
+
   // Inicializa painel de upload de arquivos geoespaciais
   initGeoUploadPanel(key, m, uploadLayersControl);
+}
+
+// Insere uma divisória arrastável entre a pane-left (tabela/camadas) e a
+// pane-right (mapa), mantendo a proporção padrão 30/70 e permitindo ao usuário
+// redimensionar. A largura é aplicada em % para permanecer responsiva.
+function setupResizableDivider(key, m){
+  const mapEl = document.getElementById('map-'+key);
+  if(!mapEl) return;
+  const paneRight = mapEl.closest('.pane-right');
+  if(!paneRight) return;
+  const splitPane = paneRight.closest('.split-pane');
+  const paneLeft = splitPane ? splitPane.querySelector('.pane-left') : null;
+  if(!splitPane || !paneLeft) return;
+  if(splitPane.querySelector('.pane-divider')) return; // já inserida
+
+  const divider = document.createElement('div');
+  divider.className = 'pane-divider';
+  divider.title = 'Arraste para redimensionar';
+  // insere a divisória entre pane-left e pane-right
+  splitPane.insertBefore(divider, paneRight);
+
+  let dragging = false;
+
+  function onMove(clientX){
+    const rect = splitPane.getBoundingClientRect();
+    let leftPct = ((clientX - rect.left) / rect.width) * 100;
+    // limites: entre 15% e 70% para a pane-left
+    leftPct = Math.min(Math.max(leftPct, 15), 70);
+    paneLeft.style.width = leftPct + '%';
+    // atualiza o mapa em tempo real (throttle via requestAnimationFrame)
+    if(!m._resizeRaf){
+      m._resizeRaf = requestAnimationFrame(()=>{
+        m._resizeRaf = null;
+        try{ m.invalidateSize({animate:false}); }catch(e){}
+      });
+    }
+  }
+
+  divider.addEventListener('mousedown', e=>{
+    e.preventDefault();
+    dragging = true;
+    divider.classList.add('dragging');
+    document.body.classList.add('resizing-panes');
+  });
+  window.addEventListener('mousemove', e=>{
+    if(!dragging) return;
+    onMove(e.clientX);
+  });
+  window.addEventListener('mouseup', ()=>{
+    if(!dragging) return;
+    dragging = false;
+    divider.classList.remove('dragging');
+    document.body.classList.remove('resizing-panes');
+    // o mapa precisa recalcular o tamanho após o redimensionamento
+    setTimeout(()=>{ try{ m.invalidateSize(); }catch(e){} }, 50);
+  });
+
+  // Suporte a toque (mobile)
+  divider.addEventListener('touchstart', e=>{
+    dragging = true; divider.classList.add('dragging');
+  }, {passive:true});
+  window.addEventListener('touchmove', e=>{
+    if(!dragging || !e.touches[0]) return;
+    onMove(e.touches[0].clientX);
+  }, {passive:true});
+  window.addEventListener('touchend', ()=>{
+    if(!dragging) return;
+    dragging = false; divider.classList.remove('dragging');
+    setTimeout(()=>{ try{ m.invalidateSize(); }catch(e){} }, 50);
+  });
 }
 
 function addMarker(key, lat, lon, label, idx) {
@@ -2594,6 +2805,50 @@ function findTrackReport(layerName){
 }
 
 // Abre um modal com o relatório completo de integridade da trilha.
+// Exibe um modal com informações sobre o sistema de referência (EPSG) usado.
+function openEpsgPopup(key){
+  const old = document.getElementById('epsg-modal');
+  if(old) old.remove();
+  const modal = document.createElement('div');
+  modal.id = 'epsg-modal';
+  modal.className = 'track-modal-overlay';
+  modal.innerHTML = `
+    <div class="track-modal" role="dialog" aria-modal="true">
+      <div class="track-modal-hdr">
+        <span class="track-modal-title">🌐 Sistema de Referência (EPSG)</span>
+        <button type="button" class="track-modal-close" aria-label="Fechar">✕</button>
+      </div>
+      <div class="track-sec">
+        <div class="track-sec-lbl">Coordenadas exibidas</div>
+        <table class="epsg-table">
+          <tr><td>Código</td><td><b>EPSG:4326</b></td></tr>
+          <tr><td>Nome</td><td>WGS 84 (World Geodetic System 1984)</td></tr>
+          <tr><td>Tipo</td><td>Geográfico (latitude / longitude)</td></tr>
+          <tr><td>Unidade</td><td>Graus decimais</td></tr>
+        </table>
+      </div>
+      <div class="track-sec">
+        <div class="track-sec-lbl">Projeção do mapa base</div>
+        <table class="epsg-table">
+          <tr><td>Código</td><td><b>EPSG:3857</b></td></tr>
+          <tr><td>Nome</td><td>WGS 84 / Pseudo-Mercator (Web Mercator)</td></tr>
+          <tr><td>Uso</td><td>Renderização dos tiles (OpenStreetMap, Esri)</td></tr>
+        </table>
+      </div>
+      <div class="track-concl">
+        O Datum oficial do Brasil é o <b>SIRGAS2000 (EPSG:4674)</b>, que é praticamente coincidente com o
+        WGS 84 (EPSG:4326) — a diferença entre eles é da ordem de centímetros,
+        desprezível para a maioria das aplicações de mapeamento. As coordenadas
+        exibidas neste WebSIG podem ser usadas diretamente como SIRGAS2000.
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  const close = ()=>modal.remove();
+  modal.querySelector('.track-modal-close').addEventListener('click', close);
+  modal.addEventListener('click', e=>{ if(e.target===modal) close(); });
+  document.addEventListener('keydown', function esc(e){ if(e.key==='Escape'){ close(); document.removeEventListener('keydown', esc); } });
+}
+
 function openTrackReportModal(report){
   if(!report) return;
   const old = document.getElementById('track-report-modal');

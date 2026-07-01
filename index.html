@@ -169,12 +169,15 @@
           <div class="measure-panel" id="measure-conv"></div>
           <div class="measure-panel area-panel" id="area-conv"></div>
           <div class="map-footer" id="footer-conv">
-            <div class="mf-item">📍 <span>Coordenadas:</span> <b id="coord-conv">—</b></div>
+            <div class="mf-item">📍 <span>Coordenadas:</span> <input type="text" class="mf-coord-input" id="coord-conv" placeholder="lat, lon" title="Coordenada sob o cursor. Digite lat, lon e tecle Enter para centralizar o mapa" autocomplete="off"></div>
             <div class="mf-sep"></div>
-            <div class="mf-item">📏 <span>Escala:</span> <b id="scale-conv">—</b></div>
+            <div class="mf-item">📏 <span>Escala:</span> <span class="mf-scale-prefix">1 :</span> <input type="text" class="mf-scale-input" id="scale-conv" placeholder="50000" title="Escala atual. Digite o denominador e tecle Enter para ajustar o zoom" autocomplete="off"></div>
+            <div class="mf-sep"></div>
+            <div class="mf-item">🔍 <span>Zoom:</span> <input type="number" class="mf-zoom-input" id="zoom-conv" min="0" max="100" step="5" title="Nível de zoom (lupa) em porcentagem — 0% afastado, 100% aproximado"><span class="mf-zoom-pct">%</span></div>
             <div class="mf-sep"></div>
             <button type="button" class="mf-measure-btn" id="measureBtn-conv" title="Medir distâncias no mapa (clique para adicionar pontos; ESC desfaz o último)" onclick="openMeasurePopup('conv')">📐 Medir</button>
             <button type="button" class="mf-measure-btn" id="areaBtn-conv" onclick="openAreaPopup('conv')" disabled title="Disponível quando houver polígono importado">📐 Área de polígono</button>
+            <div class="mf-epsg" id="epsg-conv" title="Clique para ver informações do sistema de referência (EPSG)" onclick="openEpsgPopup('conv')">🌐 EPSG:4326</div>
           </div>
         </div>
       </div>
@@ -262,12 +265,15 @@
           <div class="measure-panel" id="measure-ext"></div>
           <div class="measure-panel area-panel" id="area-ext"></div>
           <div class="map-footer" id="footer-ext">
-            <div class="mf-item">📍 <span>Coordenadas:</span> <b id="coord-ext">—</b></div>
+            <div class="mf-item">📍 <span>Coordenadas:</span> <input type="text" class="mf-coord-input" id="coord-ext" placeholder="lat, lon" title="Coordenada sob o cursor. Digite lat, lon e tecle Enter para centralizar o mapa" autocomplete="off"></div>
             <div class="mf-sep"></div>
-            <div class="mf-item">📏 <span>Escala:</span> <b id="scale-ext">—</b></div>
+            <div class="mf-item">📏 <span>Escala:</span> <span class="mf-scale-prefix">1 :</span> <input type="text" class="mf-scale-input" id="scale-ext" placeholder="50000" title="Escala atual. Digite o denominador e tecle Enter para ajustar o zoom" autocomplete="off"></div>
+            <div class="mf-sep"></div>
+            <div class="mf-item">🔍 <span>Zoom:</span> <input type="number" class="mf-zoom-input" id="zoom-ext" min="0" max="100" step="5" title="Nível de zoom (lupa) em porcentagem — 0% afastado, 100% aproximado"><span class="mf-zoom-pct">%</span></div>
             <div class="mf-sep"></div>
             <button type="button" class="mf-measure-btn" id="measureBtn-ext" title="Medir distâncias no mapa (clique para adicionar pontos; ESC desfaz o último)" onclick="openMeasurePopup('ext')">📐 Medir</button>
             <button type="button" class="mf-measure-btn" id="areaBtn-ext" onclick="openAreaPopup('ext')" disabled title="Disponível quando houver polígono importado">📐 Área de polígono</button>
+            <div class="mf-epsg" id="epsg-ext" title="Clique para ver informações do sistema de referência (EPSG)" onclick="openEpsgPopup('ext')">🌐 EPSG:4326</div>
           </div>
         </div>
       </div>
@@ -350,12 +356,15 @@
           <div class="measure-panel" id="measure-inf"></div>
           <div class="measure-panel area-panel" id="area-inf"></div>
           <div class="map-footer" id="footer-inf">
-            <div class="mf-item">📍 <span>Coordenadas:</span> <b id="coord-inf">—</b></div>
+            <div class="mf-item">📍 <span>Coordenadas:</span> <input type="text" class="mf-coord-input" id="coord-inf" placeholder="lat, lon" title="Coordenada sob o cursor. Digite lat, lon e tecle Enter para centralizar o mapa" autocomplete="off"></div>
             <div class="mf-sep"></div>
-            <div class="mf-item">📏 <span>Escala:</span> <b id="scale-inf">—</b></div>
+            <div class="mf-item">📏 <span>Escala:</span> <span class="mf-scale-prefix">1 :</span> <input type="text" class="mf-scale-input" id="scale-inf" placeholder="50000" title="Escala atual. Digite o denominador e tecle Enter para ajustar o zoom" autocomplete="off"></div>
+            <div class="mf-sep"></div>
+            <div class="mf-item">🔍 <span>Zoom:</span> <input type="number" class="mf-zoom-input" id="zoom-inf" min="0" max="100" step="5" title="Nível de zoom (lupa) em porcentagem — 0% afastado, 100% aproximado"><span class="mf-zoom-pct">%</span></div>
             <div class="mf-sep"></div>
             <button type="button" class="mf-measure-btn" id="measureBtn-inf" title="Medir distâncias no mapa (clique para adicionar pontos; ESC desfaz o último)" onclick="openMeasurePopup('inf')">📐 Medir</button>
             <button type="button" class="mf-measure-btn" id="areaBtn-inf" onclick="openAreaPopup('inf')" disabled title="Disponível quando houver polígono importado">📐 Área de polígono</button>
+            <div class="mf-epsg" id="epsg-inf" title="Clique para ver informações do sistema de referência (EPSG)" onclick="openEpsgPopup('inf')">🌐 EPSG:4326</div>
           </div>
         </div>
       </div>
