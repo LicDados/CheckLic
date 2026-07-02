@@ -994,6 +994,17 @@ function buildMap(divId, key) {
     } else {
       // Camadas vetoriais (limites/toponímias/importadas) já estão carregadas
       // via fetch; o "carregamento" reflete apenas a renderização no mapa.
+      // Para camadas IMPORTADAS re-marcadas, força um redraw dos renderizadores
+      // (evita o efeito de "só aparecer após o zoom" ao reexibir).
+      const isUploaded = (uploadedLayers[key]||[]).some(l => l.layer === layer);
+      if(isUploaded){
+        setTimeout(()=>{
+          try{
+            const R = m._impRenderers || {};
+            Object.values(R).forEach(r=>{ try{ if(r._reset) r._reset(); else if(r._update) r._update(); }catch(_){} });
+          }catch(_){}
+        }, 60);
+      }
       setTimeout(finish, 600);
     }
   });
@@ -1091,9 +1102,6 @@ function buildMap(divId, key) {
       return true;
     }
 
-    function makeEditable(el, kind){
-      // Não usado no esquema QGIS (campos já são inputs persistentes).
-    }
     // ── Coordenadas (esquema QGIS): input persistente que mostra a coordenada
     //    sob o cursor ao vivo. O usuário pode clicar e digitar "lat, lon"; o
     //    mapa só é reposicionado ao teclar ENTER. Ao mover o cursor novamente,
@@ -1233,17 +1241,34 @@ function setupResizableDivider(key, m){
 
   const divider = document.createElement('div');
   divider.className = 'pane-divider';
-  divider.title = 'Arraste para redimensionar';
+  divider.title = 'Arraste para redimensionar (duplo clique restaura 30/70)';
   // insere a divisória entre pane-left e pane-right
   splitPane.insertBefore(divider, paneRight);
 
+  // Restaura a posição salva da divisória (persistida por tela)
+  try{
+    const saved = localStorage.getItem('licgeo-split-'+key);
+    if(saved){
+      const pct = parseFloat(saved);
+      if(isFinite(pct) && pct>=15 && pct<=70) paneLeft.style.width = pct + '%';
+    }
+  }catch(e){}
+  // Duplo clique na divisória restaura a proporção padrão 30/70
+  divider.addEventListener('dblclick', ()=>{
+    paneLeft.style.width = '';
+    try{ localStorage.removeItem('licgeo-split-'+key); }catch(e){}
+    setTimeout(()=>{ try{ m.invalidateSize(); }catch(e){} }, 50);
+  });
+
   let dragging = false;
+  let lastPct = null;
 
   function onMove(clientX){
     const rect = splitPane.getBoundingClientRect();
     let leftPct = ((clientX - rect.left) / rect.width) * 100;
     // limites: entre 15% e 70% para a pane-left
     leftPct = Math.min(Math.max(leftPct, 15), 70);
+    lastPct = leftPct;
     paneLeft.style.width = leftPct + '%';
     // atualiza o mapa em tempo real (throttle via requestAnimationFrame)
     if(!m._resizeRaf){
@@ -1269,6 +1294,8 @@ function setupResizableDivider(key, m){
     dragging = false;
     divider.classList.remove('dragging');
     document.body.classList.remove('resizing-panes');
+    // persiste a posição escolhida
+    if(lastPct != null){ try{ localStorage.setItem('licgeo-split-'+key, lastPct.toFixed(1)); }catch(e){} }
     // o mapa precisa recalcular o tamanho após o redimensionamento
     setTimeout(()=>{ try{ m.invalidateSize(); }catch(e){} }, 50);
   });
@@ -1284,6 +1311,7 @@ function setupResizableDivider(key, m){
   window.addEventListener('touchend', ()=>{
     if(!dragging) return;
     dragging = false; divider.classList.remove('dragging');
+    if(lastPct != null){ try{ localStorage.setItem('licgeo-split-'+key, lastPct.toFixed(1)); }catch(e){} }
     setTimeout(()=>{ try{ m.invalidateSize(); }catch(e){} }, 50);
   });
 }
@@ -1601,7 +1629,7 @@ function buildAreaPanelList(key){
   if(!panel) return;
   const polys = (uploadedLayers[key]||[]).filter(l=>l.hasPolygon);
   const opts = polys.map(l=>
-    `<button class="area-layer-btn" onclick="selectAreaLayer('${key}','${l.id}')">⬛ ${escHtml(l.name)}</button>`
+    `<button class="area-layer-btn" onclick="selectAreaLayer('${key}','${l.id}')"><span class="alb-icon">⬛</span><span class="alb-name">${escHtml(l.name)}</span></button>`
   ).join('');
   panel.innerHTML = `
     <div class="measure-panel-hdr"><span>📐 Área de polígono</span><span class="mp-close" onclick="closeAreaPopup('${key}')">✕</span></div>
@@ -1688,11 +1716,14 @@ function clearUploadedLayers(key){
   (uploadedLayers[key]||[]).forEach(l=>{
     try{ if(m) m.removeLayer(l.layer); }catch(e){}
     try{ if(m && m._uploadLayersControl) m._uploadLayersControl.removeLayer(l.layer); }catch(e){}
+    // Remove o relatório de integridade associado a esta camada (se houver)
+    try{
+      const rep = findTrackReport(l.name);
+      if(rep && _trackReports[rep.fileName]) delete _trackReports[rep.fileName];
+    }catch(e){}
   });
   uploadedLayers[key] = [];
   uploadedColorIdx[key] = 0;
-  // Limpa relatórios de integridade de trilhas armazenados
-  for(const k in _trackReports) delete _trackReports[k];
   // Limpa a lista visual e oculta o painel de camadas importadas
   const list = document.getElementById('geolist-'+key);
   if(list) list.innerHTML = '';
@@ -1959,6 +1990,11 @@ function addGeoLayerToPanel(key, name, layer, color, map, ulc, geojson){
     if(ulc) ulc.removeLayer(layer);
     uploadedLayers[key] = uploadedLayers[key].filter(l=>l.id!==id);
     item.remove();
+    // Remove o relatório de integridade associado (se houver)
+    try{
+      const rep = findTrackReport(name);
+      if(rep && _trackReports[rep.fileName]) delete _trackReports[rep.fileName];
+    }catch(e){}
     if(!uploadedLayers[key].length){
       panel.classList.remove('show');
       if(ulc){
@@ -2012,14 +2048,6 @@ function updateAreaButton(key){
   btn.disabled = !hasPoly;
   btn.title = hasPoly ? 'Calcular área de polígonos importados'
                       : 'Disponível quando houver polígono importado';
-}
-
-function styleGeoLayer(color){
-  return {
-    color: color, weight: 2, opacity: 0.9,
-    fillColor: color, fillOpacity: 0.12,
-    dashArray: null
-  };
 }
 
 function bindGeoFeaturePopup(layer, feature, key){
@@ -2238,7 +2266,6 @@ function sanitizeAndReproject(geojson, prjText, base){
 // podem ou não ser preservados. Procuramos por colunas típicas de trilha no
 // .dbf (ex.: time/timestamp/ele/speed). A presença indica que as propriedades
 // originais foram mantidas; a ausência impede a verificação de autenticidade.
-let _shpTrackChecked = false; // evita múltiplos alertas no mesmo lote
 function checkShapefileTrackIntegrity(geojson, base){
   try{
     const feats = geojson.features || [];
@@ -2837,9 +2864,8 @@ function openEpsgPopup(key){
       </div>
       <div class="track-concl">
         O Datum oficial do Brasil é o <b>SIRGAS2000 (EPSG:4674)</b>, que é praticamente coincidente com o
-        WGS 84 (EPSG:4326) — a diferença entre eles é da ordem de centímetros,
-        desprezível para a maioria das aplicações de mapeamento. As coordenadas
-        exibidas neste WebSIG podem ser usadas diretamente como SIRGAS2000.
+        WGS 84 (EPSG:4326) — a diferença entre eles é da ordem de centímetros,  desprezível para a maioria das aplicações de mapeamento. 
+        As coordenadas exibidas neste WebSIG podem ser usadas diretamente como SIRGAS2000.
       </div>
     </div>`;
   document.body.appendChild(modal);

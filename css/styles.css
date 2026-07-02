@@ -737,11 +737,14 @@ label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
 .area-panel{ right:14px; width:340px; max-width:calc(100vw - 28px); }
 .area-layer-list{display:flex;flex-direction:column;gap:6px;max-height:160px;overflow-y:auto;margin-bottom:4px}
 .area-layer-btn{
+  display:flex;align-items:flex-start;gap:6px;
   text-align:left;padding:7px 10px;font-size:12px;border-radius:8px;
   border:1px solid var(--border2);background:var(--card2);color:var(--text);
   cursor:pointer;font-family:var(--fb);transition:border-color .15s,background .15s;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  line-height:1.35;
 }
+.area-layer-btn .alb-icon{flex:0 0 auto;line-height:1.35}
+.area-layer-btn .alb-name{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;word-break:break-word}
 .area-layer-btn:hover{border-color:var(--accent);background:var(--accent-bg)}
 .area-layer-btn.active{border-color:var(--accent);background:var(--accent-bg);color:var(--accent-lt);font-weight:600}
 .area-result-row{display:flex;flex-direction:column;align-items:stretch;gap:1px;padding:5px 0;border-bottom:1px solid var(--border)}
@@ -776,7 +779,7 @@ label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
   padding:9px 11px;font-size:13px;color:var(--text);margin-bottom:10px;min-height:20px;
 }
 .measure-result b{font-family:monospace;color:var(--accent-lt)}
-.measure-hint{font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:10px}
+.measure-hint{font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:10px;overflow-wrap:anywhere;word-break:break-word}
 .measure-actions{display:flex;gap:7px}
 .measure-actions button{flex:1}
 
