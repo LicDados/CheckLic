@@ -869,15 +869,9 @@ function buildMap(divId, key) {
     }
   }
 
-  // Consulta WFS espacial leve: busca apenas feições que intersectam um
-  // pequeno bbox (~80m) em torno do ponto clicado, em vez de carregar toda
-  // a camada. Usado como último recurso quando WMS GetFeatureInfo falha.
-  // ── Proxy CORS de último recurso ──
-  // Servidores como IPHAN, FUNAI e SNIF/SFB não enviam o cabeçalho
-  // Access-Control-Allow-Origin, o que faz o navegador bloquear a leitura da
-  // resposta do GetFeatureInfo. Como esses serviços muitas vezes também não
-  // suportam JSONP, tentamos uma cascata de proxies CORS públicos.
+  const CUSTOM_CORS_PROXY = 'https://checklic-proxy.licenciamento-dados.workers.dev/?url='; // ex.: 'https://checklic-proxy.SEU-USUARIO.workers.dev/?url='
   const CORS_PROXIES = [
+    ...(CUSTOM_CORS_PROXY ? [u => CUSTOM_CORS_PROXY + encodeURIComponent(u)] : []),
     u => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
     u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
     u => 'https://thingproxy.freeboard.io/fetch/' + u,
@@ -1182,6 +1176,20 @@ function buildMap(divId, key) {
     }
   }
   setupEditableFooter();
+
+  // ── Botão "Histórico de imagens" (Esri Wayback): visível apenas em escala
+  //    GRANDE (zoom alto), quando faz sentido consultar o histórico local. ──
+  const WAYBACK_MIN_ZOOM = 15; // ~1:18.000 ou maior
+  function updateWaybackButton(){
+    const btn = document.getElementById('waybackBtn-'+key);
+    if(!btn) return;
+    // Duas condições: escala grande (zoom alto) E camada base Satélite (ESRI)
+    // ativa — o histórico do Wayback refere-se à imagem Esri World Imagery.
+    const satActive = m.hasLayer(sat);
+    btn.style.display = (satActive && m.getZoom() >= WAYBACK_MIN_ZOOM) ? '' : 'none';
+  }
+  m.on('zoomend load baselayerchange', updateWaybackButton);
+  updateWaybackButton();
 
   // ── Clique no mapa: se Limites Estaduais/Municipais não estiverem
   //    ativos e o clique não atingir outra camada, exibe coordenadas ──
@@ -1627,17 +1635,18 @@ function closeAreaPopup(key){
 function buildAreaPanelList(key){
   const panel = document.getElementById('area-'+key);
   if(!panel) return;
-  const polys = (uploadedLayers[key]||[]).filter(l=>l.hasPolygon);
-  const opts = polys.map(l=>
-    `<button class="area-layer-btn" onclick="selectAreaLayer('${key}','${l.id}')"><span class="alb-icon">⬛</span><span class="alb-name">${escHtml(l.name)}</span></button>`
-  ).join('');
+  const feats = (uploadedLayers[key]||[]).filter(l=>l.hasPolygon || l.hasLine);
+  const opts = feats.map(l=>{
+    const icon = l.hasPolygon ? '⬛' : '➖';
+    return `<button class="area-layer-btn" onclick="selectAreaLayer('${key}','${l.id}')"><span class="alb-icon">${icon}</span><span class="alb-name">${escHtml(l.name)}</span></button>`;
+  }).join('');
   panel.innerHTML = `
-    <div class="measure-panel-hdr"><span>📐 Área de polígono</span><span class="mp-close" onclick="closeAreaPopup('${key}')">✕</span></div>
+    <div class="measure-panel-hdr"><span>📐 Área e comprimento</span><span class="mp-close" onclick="closeAreaPopup('${key}')">✕</span></div>
     <div class="color-panel-section">
-      <div class="color-panel-lbl">Camadas de polígono importadas</div>
-      <div class="area-layer-list">${opts || '<div class="measure-hint">Nenhuma camada de polígono importada.</div>'}</div>
+      <div class="color-panel-lbl">Camadas importadas (polígono e linha)</div>
+      <div class="area-layer-list">${opts || '<div class="measure-hint">Nenhuma camada de polígono ou linha importada.</div>'}</div>
     </div>
-    <div class="measure-hint" id="ahint-${key}">Selecione uma camada acima para calcular sua área total.</div>
+    <div class="measure-hint" id="ahint-${key}">Selecione uma camada acima: polígonos exibem a área total; linhas exibem o comprimento total.</div>
     <div class="measure-result" id="aresult-${key}">—</div>
   `;
 }
@@ -1649,19 +1658,56 @@ function selectAreaLayer(key, id){
   // destaca o botão selecionado
   document.querySelectorAll(`#area-${key} .area-layer-btn`).forEach(b=>b.classList.remove('active'));
   const btns = [...document.querySelectorAll(`#area-${key} .area-layer-btn`)];
-  const idxList = (uploadedLayers[key]||[]).filter(l=>l.hasPolygon).findIndex(l=>l.id===id);
+  const idxList = (uploadedLayers[key]||[]).filter(l=>l.hasPolygon || l.hasLine).findIndex(l=>l.id===id);
   if(btns[idxList]) btns[idxList].classList.add('active');
   if(!entry || !res){ return; }
-  const m2 = geojsonAreaM2(entry.geojson);
-  const a = fmtArea(m2);
-  if(hint) hint.textContent = `Área total de "${entry.name}":`;
-  res.innerHTML = `
-    <div class="area-result-row"><span>Metros quadrados</span><b>${a.m2} m²</b></div>
-    <div class="area-result-row"><span>Quilômetros quadrados</span><b>${a.km2} km²</b></div>
-    <div class="area-result-row"><span>Hectares</span><b>${a.ha} ha</b></div>
-  `;
+
+  let rows = '';
+  // POLÍGONO → área total
+  if(entry.hasPolygon){
+    const m2 = geojsonAreaM2(entry.geojson);
+    const a = fmtArea(m2);
+    rows += `
+      <div class="area-result-row"><span>Metros quadrados</span><b>${a.m2} m²</b></div>
+      <div class="area-result-row"><span>Quilômetros quadrados</span><b>${a.km2} km²</b></div>
+      <div class="area-result-row"><span>Hectares</span><b>${a.ha} ha</b></div>`;
+  }
+  // LINHA → comprimento total
+  if(entry.hasLine){
+    const lenM = geojsonLengthM(entry.geojson);
+    const mTxt  = lenM.toLocaleString('pt-BR', {maximumFractionDigits:1});
+    const kmTxt = (lenM/1000).toLocaleString('pt-BR', {maximumFractionDigits:3});
+    rows += `
+      <div class="area-result-row"><span>Comprimento (metros)</span><b>${mTxt} m</b></div>
+      <div class="area-result-row"><span>Comprimento (quilômetros)</span><b>${kmTxt} km</b></div>`;
+  }
+  if(hint){
+    const lbl = entry.hasPolygon && entry.hasLine ? 'Área e comprimento totais de'
+              : entry.hasPolygon ? 'Área total de' : 'Comprimento total de';
+    hint.textContent = `${lbl} "${entry.name}":`;
+  }
+  res.innerHTML = rows || '—';
   // tenta dar zoom à camada selecionada
   try{ maps[key].fitBounds(entry.layer.getBounds(), {padding:[32,32]}); }catch(e){}
+}
+
+// Comprimento total (em metros) das linhas de um GeoJSON, somando os segmentos
+// pela fórmula de Haversine (adequada para trilhas e caminhamentos).
+function geojsonLengthM(geojson){
+  let total = 0;
+  const lineLen = coords => {
+    let s = 0;
+    for(let i=1;i<coords.length;i++){
+      s += haversineM([coords[i-1][1], coords[i-1][0]], [coords[i][1], coords[i][0]]);
+    }
+    return s;
+  };
+  (geojson.features||[]).forEach(f=>{
+    const g = f.geometry; if(!g) return;
+    if(g.type==='LineString') total += lineLen(g.coordinates);
+    else if(g.type==='MultiLineString') g.coordinates.forEach(part=> total += lineLen(part));
+  });
+  return total;
 }
 
 // ════════════════════════════════════════
@@ -1930,7 +1976,7 @@ function addGeoLayerToPanel(key, name, layer, color, map, ulc, geojson){
     else if(t==='Polygon'||t==='MultiPolygon') types.add('polygon');
   });
 
-  uploadedLayers[key].push({id, name, layer, color, geojson, types:[...types], hasPolygon:types.has('polygon'), pointCount});
+  uploadedLayers[key].push({id, name, layer, color, geojson, types:[...types], hasPolygon:types.has('polygon'), hasLine:types.has('line'), pointCount});
   const panel = document.getElementById('geoup-'+key);
   panel.classList.add('show');
   const list = document.getElementById('geolist-'+key);
@@ -2039,15 +2085,15 @@ function reorderGeoLayerList(key){
   items.forEach(it => list.appendChild(it)); // reanexa na nova ordem
 }
 
-// Habilita o botão "Área de polígono" somente quando há ao menos uma camada
+// Habilita o botão "Área e comprimento" somente quando há ao menos uma camada
 // importada do tipo polígono na seção atual.
 function updateAreaButton(key){
   const btn = document.getElementById('areaBtn-'+key);
   if(!btn) return;
-  const hasPoly = (uploadedLayers[key]||[]).some(l=>l.hasPolygon);
-  btn.disabled = !hasPoly;
-  btn.title = hasPoly ? 'Calcular área de polígonos importados'
-                      : 'Disponível quando houver polígono importado';
+  const hasAny = (uploadedLayers[key]||[]).some(l=>l.hasPolygon || l.hasLine);
+  btn.disabled = !hasAny;
+  btn.title = hasAny ? 'Calcular área de polígonos e comprimento de linhas importadas'
+                     : 'Disponível quando houver polígono ou linha importada';
 }
 
 function bindGeoFeaturePopup(layer, feature, key){
@@ -2832,6 +2878,20 @@ function findTrackReport(layerName){
 }
 
 // Abre um modal com o relatório completo de integridade da trilha.
+// Abre o Esri World Imagery Wayback em nova aba, centralizado na posição e
+// zoom atuais do mapa. O Wayback exibe o histórico de versões da imagem de
+// satélite (datas de publicação) — gratuito e sem necessidade de login para
+// consulta. Formato do hash: mapCenter=lon,lat,zoom (mesmo padrão que o app
+// usa ao compartilhar a visualização).
+function openWayback(key){
+  const m = maps[key];
+  if(!m) return;
+  const c = m.getCenter();
+  const z = Math.round(m.getZoom());
+  const url = `https://livingatlas.arcgis.com/wayback/#mapCenter=${c.lng.toFixed(5)}%2C${c.lat.toFixed(5)}%2C${z}`;
+  window.open(url, '_blank', 'noopener');
+}
+
 // Exibe um modal com informações sobre o sistema de referência (EPSG) usado.
 function openEpsgPopup(key){
   const old = document.getElementById('epsg-modal');

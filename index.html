@@ -119,7 +119,7 @@
           <li><strong>Visualização no mapa:</strong> os pontos aparecem sobre dezenas de camadas oficiais (IPHAN, IBGE, FUNAI, ICMBio, DNIT, SNIF, ANA, VALEC, Marinha e outras).</li>
           <li><strong>Copiar coordenadas:</strong> cada latitude e longitude convertida tem um botão de cópia individual (⧉) ao lado do valor, pronto para colar no SICG.</li>
           <li><strong>Importar arquivo geoespacial:</strong> sobreponha KML, KMZ, GeoJSON, GPX, GTM (GPS TrackMaker) ou Shapefile (.zip —  inclusive contendo qualquer arquivo geoespacial válido — ou pasta) para conferência visual.</li>
-          <li><strong>Ferramentas do mapa:</strong> meça distâncias e calcule a área de polígonos importados (m², km² e ha) pelos botões do rodapé.</li>
+          <li><strong>Ferramentas do mapa:</strong> meça distâncias, calcule a área de polígonos e o comprimento de linhas importadas pelos botões do rodapé; em zoom aproximado, consulte o histórico de imagens de satélite (Esri Wayback).</li>
           <li><strong>Exportação:</strong> botão único <strong>Exportar</strong> com escolha de formato — KML (Google Earth), Shapefile .zip (QGIS) ou GeoJSON.</li>
         </ul>
         <span class="info-note">Dica: ao colar valores manualmente, o SICG aceita o símbolo de grau (º) automaticamente. Passe o cursor sobre os botões para ver o que cada um faz.</span>
@@ -176,7 +176,8 @@
             <div class="mf-item">🔍 <span>Zoom:</span> <input type="number" class="mf-zoom-input" id="zoom-conv" min="0" max="100" step="5" title="Nível de zoom (lupa) em porcentagem — 0% afastado, 100% aproximado"><span class="mf-zoom-pct">%</span></div>
             <div class="mf-sep"></div>
             <button type="button" class="mf-measure-btn" id="measureBtn-conv" title="Medir distâncias no mapa (clique para adicionar pontos; ESC desfaz o último)" onclick="openMeasurePopup('conv')">📐 Medir</button>
-            <button type="button" class="mf-measure-btn" id="areaBtn-conv" onclick="openAreaPopup('conv')" disabled title="Disponível quando houver polígono importado">📐 Área de polígono</button>
+            <button type="button" class="mf-measure-btn" id="areaBtn-conv" onclick="openAreaPopup('conv')" disabled title="Disponível quando houver polígono ou linha importada">📐 Área e comprimento</button>
+            <button type="button" class="mf-measure-btn" id="waybackBtn-conv" onclick="openWayback('conv')" style="display:none" title="Ver o histórico de imagens de satélite deste local no Esri Wayback (abre em nova aba)">🕓 Histórico de imagens</button>
             <div class="mf-epsg" id="epsg-conv" title="Clique para ver informações do sistema de referência (EPSG)" onclick="openEpsgPopup('conv')">🌐 EPSG:4326</div>
           </div>
         </div>
@@ -272,7 +273,8 @@
             <div class="mf-item">🔍 <span>Zoom:</span> <input type="number" class="mf-zoom-input" id="zoom-ext" min="0" max="100" step="5" title="Nível de zoom (lupa) em porcentagem — 0% afastado, 100% aproximado"><span class="mf-zoom-pct">%</span></div>
             <div class="mf-sep"></div>
             <button type="button" class="mf-measure-btn" id="measureBtn-ext" title="Medir distâncias no mapa (clique para adicionar pontos; ESC desfaz o último)" onclick="openMeasurePopup('ext')">📐 Medir</button>
-            <button type="button" class="mf-measure-btn" id="areaBtn-ext" onclick="openAreaPopup('ext')" disabled title="Disponível quando houver polígono importado">📐 Área de polígono</button>
+            <button type="button" class="mf-measure-btn" id="areaBtn-ext" onclick="openAreaPopup('ext')" disabled title="Disponível quando houver polígono ou linha importada">📐 Área e comprimento</button>
+            <button type="button" class="mf-measure-btn" id="waybackBtn-ext" onclick="openWayback('ext')" style="display:none" title="Ver o histórico de imagens de satélite deste local no Esri Wayback (abre em nova aba)">🕓 Histórico de imagens</button>
             <div class="mf-epsg" id="epsg-ext" title="Clique para ver informações do sistema de referência (EPSG)" onclick="openEpsgPopup('ext')">🌐 EPSG:4326</div>
           </div>
         </div>
@@ -302,7 +304,7 @@
           <li><strong>Importar arquivo geoespacial:</strong> aceita KML, KMZ, GeoJSON, GPX, GTM (GPS TrackMaker) e Shapefile — compactado em <strong>.zip</strong> (inclusive contendo qualquer arquivo geoespacial válido) ou como pasta com os componentes (.shp, .shx, .dbf, .prj).</li>
           <li><strong>Camadas importadas:</strong> aparecem no painel agrupadas por tipologia na ordem <strong>📍 ponto, ➖ linha, ⬛ polígono</strong> (pontos ordenados pela quantidade detectada, do maior para o menor), com cor personalizável.</li>
           <li><strong>Verificação de trilhas:</strong> ao importar trilhas a pé (GPX, GTM ou Shapefile de trilha), o sistema analisa a autenticidade do percurso e exibe um selo no painel (✅ autêntica / ⚠️ possíveis alterações) — clique nele para ver a análise detalhada.</li>
-          <li><strong>Ferramentas do mapa:</strong> meça distâncias e calcule a área de polígonos importados (m², km² e hectares) pelos botões do rodapé.</li>
+          <li><strong>Ferramentas do mapa:</strong> meça distâncias, calcule a área de polígonos (m², km² e hectares) e o comprimento de linhas importadas pelos botões do rodapé; em zoom aproximado, consulte o histórico de imagens de satélite (Esri Wayback).</li>
           <li><strong>Exportação:</strong> botão único <strong>Exportar</strong> com escolha de formato — KML, Shapefile .zip ou GeoJSON.</li>
         </ul>
         <span class="info-note">Shapefile pode ser enviado compactado em .zip ou como pasta com os arquivos componentes (.shp, .shx, .dbf e, idealmente, .prj). Limite de 50 MB por envio. Passe o cursor sobre os botões para ver o que cada um faz.</span>
@@ -363,7 +365,8 @@
             <div class="mf-item">🔍 <span>Zoom:</span> <input type="number" class="mf-zoom-input" id="zoom-inf" min="0" max="100" step="5" title="Nível de zoom (lupa) em porcentagem — 0% afastado, 100% aproximado"><span class="mf-zoom-pct">%</span></div>
             <div class="mf-sep"></div>
             <button type="button" class="mf-measure-btn" id="measureBtn-inf" title="Medir distâncias no mapa (clique para adicionar pontos; ESC desfaz o último)" onclick="openMeasurePopup('inf')">📐 Medir</button>
-            <button type="button" class="mf-measure-btn" id="areaBtn-inf" onclick="openAreaPopup('inf')" disabled title="Disponível quando houver polígono importado">📐 Área de polígono</button>
+            <button type="button" class="mf-measure-btn" id="areaBtn-inf" onclick="openAreaPopup('inf')" disabled title="Disponível quando houver polígono ou linha importada">📐 Área e comprimento</button>
+            <button type="button" class="mf-measure-btn" id="waybackBtn-inf" onclick="openWayback('inf')" style="display:none" title="Ver o histórico de imagens de satélite deste local no Esri Wayback (abre em nova aba)">🕓 Histórico de imagens</button>
             <div class="mf-epsg" id="epsg-inf" title="Clique para ver informações do sistema de referência (EPSG)" onclick="openEpsgPopup('inf')">🌐 EPSG:4326</div>
           </div>
         </div>
