@@ -515,7 +515,12 @@ label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
 .std-layers-control .leaflet-control-layers-overlays label input[type="checkbox"]{
   margin-top:2px;flex-shrink:0;
 }
-.leaflet-control-layers-separator{border-color:var(--border)!important}
+.leaflet-control-layers-separator{
+  border-color:var(--border)!important;
+  border-width:1px 0 0 0!important;
+  border-style:solid!important;
+  margin:6px 0;
+}
 .layer-color-input{
   width:18px;height:18px;padding:0;margin-left:8px;vertical-align:middle;
   border:1px solid var(--border2);border-radius:4px;cursor:pointer;
@@ -613,6 +618,22 @@ label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
 }
 .rich-popup .leaflet-popup-tip { background: var(--card) !important; }
 .rich-popup .leaflet-popup-close-button { color: var(--muted) !important; font-size:16px !important; top:8px !important; right:10px !important; }
+/* Conteúdo extenso (ex.: "Ato Legal" da ANEEL): limita a altura e rola por
+   dentro, para o popup nunca transbordar o mapa. O cabeçalho (título) fica
+   fixo acima da área rolável. */
+.rich-popup .leaflet-popup-content{
+  margin:12px 14px !important;
+  max-height:none !important;
+}
+.rich-popup .rich-popup-scroll{
+  max-height:340px;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding-right:12px;
+}
+.rich-popup .rich-popup-scroll::-webkit-scrollbar{width:8px}
+.rich-popup .rich-popup-scroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+.rich-popup .rich-popup-scroll::-webkit-scrollbar-track{background:transparent}
 
 /* ═══════════════════════════════════════
    PAINEL DE CORES
@@ -673,6 +694,19 @@ label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
   font-size:10px;
   box-shadow:0 1px 3px rgba(0,0,0,.15);
 }
+/* ── Escala gráfica (barra km/m): canto inferior ESQUERDO, elevada acima da
+   faixa do rodapé para ficar na MESMA linha do copyright (à direita). ── */
+.leaflet-bottom.leaflet-left .leaflet-control-scale{
+  margin-bottom:45px;
+  margin-left:8px;
+}
+.leaflet-control-scale-line{
+  background:rgba(255,255,255,.45);
+  border:1.5px solid rgba(60,60,60,.7);border-top:none;
+  color:#111;font-size:9px;font-weight:700;text-align:center;text-shadow:0 0 2px rgba(255,255,255,.95), 0 0 4px rgba(255,255,255,.7);
+  padding:0 4px 1px;line-height:1.5;
+  box-shadow:0 1px 2px rgba(0,0,0,.1);
+}
 /* Indicador de EPSG (CRS exibido no webmap): logo ABAIXO do copyright,
    no canto inferior direito, acima da faixa do rodapé. */
 /* EPSG dentro da faixa do rodapé, empurrado para a extremidade DIREITA
@@ -719,6 +753,38 @@ label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
 }
 .map-footer .mf-zoom-input:focus{border-color:var(--accent)}
 .map-footer .mf-zoom-pct{color:var(--muted);font-size:12px;font-weight:600;margin-left:-2px}
+
+/* ── Coluna 🔗 "Ligar pontos" das tabelas ── */
+th.th-link{width:26px;text-align:center;cursor:help}
+td.td-link{width:26px;text-align:center}
+.pt-link-cb{cursor:pointer;accent-color:#ffb020;width:14px;height:14px;vertical-align:middle}
+
+/* ── Rodapé responsivo: compacta progressivamente em monitores menores para
+   que TODAS as opções (inclusive as da direita) permaneçam visíveis. ── */
+@media (max-width:1680px){
+  .map-footer{gap:9px;padding:6px 10px}
+  .map-footer .mf-coord-input{width:152px}
+  .map-footer .mf-scale-input{width:78px}
+  .mf-measure-btn{padding:4px 8px}
+}
+@media (max-width:1450px){
+  .map-footer{gap:7px;padding:6px 8px}
+  /* Esconde os rótulos de texto ("Coordenadas:", "Escala:", "Zoom:"),
+     mantendo os ícones e os campos — o "1 :" e o "%" são preservados. */
+  .map-footer .mf-item > span:not(.mf-scale-prefix):not(.mf-zoom-pct){display:none}
+  .map-footer .mf-coord-input{width:140px}
+  .map-footer .mf-scale-input{width:72px}
+  .map-footer .mf-zoom-input{width:46px}
+  .mf-measure-btn{padding:4px 7px;font-size:11px}
+  .map-footer .mf-epsg{font-size:11px;padding:2px 6px}
+  .map-footer .mf-sep{display:none}
+}
+@media (max-width:1200px){
+  .map-footer{gap:6px}
+  .map-footer .mf-coord-input{width:126px;font-size:11px}
+  .map-footer .mf-scale-input{width:64px;font-size:11px}
+  .mf-measure-btn{font-size:10.5px;padding:4px 6px}
+}
 #coord-conv,#coord-ext,#coord-inf{min-width:170px}
 #scale-conv,#scale-ext,#scale-inf{min-width:90px}
 .map-footer .mf-sep{width:1px;height:14px;background:var(--border2);flex-shrink:0}
@@ -749,8 +815,8 @@ label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
 .area-layer-btn.active{border-color:var(--accent);background:var(--accent-bg);color:var(--accent-lt);font-weight:600}
 .area-result-row{display:flex;flex-direction:column;align-items:stretch;gap:1px;padding:5px 0;border-bottom:1px solid var(--border)}
 .area-result-row:last-child{border-bottom:none}
-.area-result-row span{color:var(--muted);font-size:11px;white-space:nowrap}
-.area-result-row b{font-family:monospace;color:var(--accent-lt);font-size:14px;text-align:left;white-space:nowrap;overflow-x:auto}
+.area-result-row span{color:var(--muted);font-size:11px;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
+.area-result-row b{font-family:monospace;color:var(--accent-lt);font-size:14px;text-align:left;white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.35}
 
 /* ── Painel/Popup de medição ── */
 .measure-panel{
@@ -759,6 +825,7 @@ label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
   border-radius:var(--rlg);box-shadow:var(--shadow);
   padding:14px;width:220px;display:none;
   font-family:var(--fb);
+  max-height:calc(100% - 60px);overflow-y:auto;
 }
 .measure-panel.open{display:block}
 .measure-panel-hdr{
@@ -934,3 +1001,9 @@ select:focus-visible,
 }
 .home-footer a{color:var(--accent-lt);text-decoration:none}
 .home-footer a:hover{text-decoration:underline}
+
+/* ── Verificação de buffer AID × ADA ── */
+.adaaid-btn{border-color:var(--accent)}
+.adaaid-status{font-weight:600;font-size:12px;padding:7px 10px;border-radius:8px;margin-bottom:8px;line-height:1.45}
+.adaaid-status.ok{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bdr)}
+.adaaid-status.warn{background:rgba(230,160,60,.12);color:#e0a33b;border:1px solid rgba(230,160,60,.4)}

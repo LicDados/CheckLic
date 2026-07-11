@@ -24,7 +24,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@5.8.1/dist/togeojson.umd.js"></script>
 
 <!-- Folha de estilos do aplicativo -->
-<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/styles.css?v=20260711185444">
 </head>
 <body>
 <a href="#main-content" class="skip-link">Pular para o conteúdo principal</a>
@@ -115,11 +115,11 @@
         <span class="info-title">🔄 Converter Coordenadas (UTM → Lat/Long)</span>
         Esta ferramenta converte coordenadas <strong>UTM (Universal Transversa de Mercator)</strong> — informadas por Fuso, Zona, Este (E) e Norte (N) — para <strong>latitude e longitude</strong> no Datum <strong>SIRGAS2000</strong>, padrão oficial brasileiro. É voltada ao preenchimento de informações geoespaciais de sítios arqueológicos no <strong>SICG/IPHAN</strong>.
         <ul>
-          <li><strong>Entrada em lote:</strong> adicione quantos pontos quiser e converta todos de uma vez.</li>
+          <li><strong>Entrada em lote:</strong> adicione quantos pontos quiser e converta todos de uma vez — novas entradas já vêm com Fuso/Zona pré-preenchidos a partir da primeira, e valores colados com pontos/vírgulas de milhar são normalizados automaticamente.</li>
           <li><strong>Visualização no mapa:</strong> os pontos aparecem sobre dezenas de camadas oficiais (IPHAN, IBGE, FUNAI, ICMBio, DNIT, SNIF, ANA, VALEC, Marinha e outras).</li>
           <li><strong>Copiar coordenadas:</strong> cada latitude e longitude convertida tem um botão de cópia individual (⧉) ao lado do valor, pronto para colar no SICG.</li>
           <li><strong>Importar arquivo geoespacial:</strong> sobreponha KML, KMZ, GeoJSON, GPX, GTM (GPS TrackMaker) ou Shapefile (.zip —  inclusive contendo qualquer arquivo geoespacial válido — ou pasta) para conferência visual.</li>
-          <li><strong>Ferramentas do mapa:</strong> meça distâncias, calcule a área de polígonos e o comprimento de linhas importadas pelos botões do rodapé; em zoom aproximado, consulte o histórico de imagens de satélite (Esri Wayback).</li>
+          <li><strong>Ferramentas do mapa:</strong> meça distâncias, calcule a área de polígonos e o comprimento de linhas importadas pelos botões do rodapé; use a coluna 🔗 da tabela para ligar pontos e visualizar (e medir) a linha ou o polígono formado; em zoom aproximado, consulte o histórico de imagens de satélite (Esri Wayback).</li>
           <li><strong>Exportação:</strong> botão único <strong>Exportar</strong> com escolha de formato — KML (Google Earth), Shapefile .zip (QGIS) ou GeoJSON.</li>
         </ul>
         <span class="info-note">Dica: ao colar valores manualmente, o SICG aceita o símbolo de grau (º) automaticamente. Passe o cursor sobre os botões para ver o que cada um faz.</span>
@@ -156,7 +156,7 @@
         </div>
         <div class="pane-scroll">
           <table>
-            <thead><tr><th>#</th><th>Zona</th><th>Latitude°</th><th>Longitude°</th></tr></thead>
+            <thead><tr><th class="th-link" title="Ligar pontos: marque para destacar no mapa e traçar uma linha na ordem de seleção">🔗</th><th>#</th><th>Zona</th><th>Latitude°</th><th>Longitude°</th></tr></thead>
             <tbody id="conv-tbody"></tbody>
           </table>
         </div>
@@ -206,7 +206,7 @@
           <li><strong>Envio individual ou em lote:</strong> selecione várias fotos ou uma pasta inteira (incluindo subpastas).</li>
           <li><strong>Conversão automática:</strong> as coordenadas são convertidas para <strong>UTM/SIRGAS2000</strong> e plotadas no mapa.</li>
           <li><strong>Tabela detalhada:</strong> o painel esquerdo lista nome do arquivo, coordenadas, altitude e data/hora de cada foto.</li>
-          <li><strong>Importar e medir:</strong> sobreponha arquivos geoespaciais (KML/KMZ/GeoJSON/GPX/Shapefile), meça distâncias e calcule áreas no próprio mapa.</li>
+          <li><strong>Importar e medir:</strong> sobreponha arquivos geoespaciais (KML/KMZ/GeoJSON/GPX/Shapefile), meça distâncias e calcule áreas no próprio mapa; a coluna 🔗 da tabela liga pontos das fotos para visualizar e medir a linha ou o polígono formado.</li>
           <li><strong>Exportação:</strong> botão único <strong>Exportar</strong> com escolha de formato — KML, Shapefile .zip ou GeoJSON.</li>
         </ul>
         <span class="info-note">Formatos aceitos: JPG, JPEG, TIFF, HEIC, HEIF e WEBP. Fotos sem GPS são identificadas e contabilizadas à parte. Todo o processamento ocorre no seu navegador — nenhuma foto é enviada a servidores.</span>
@@ -253,7 +253,7 @@
         </div>
         <div class="pane-scroll">
           <table>
-            <thead><tr><th>#</th><th>Arquivo</th><th>Zona</th><th>E (m)</th><th>N (m)</th><th>Altitude (m)</th><th>Data/Hora</th></tr></thead>
+            <thead><tr><th class="th-link" title="Ligar pontos: marque para destacar no mapa e traçar uma linha na ordem de seleção">🔗</th><th>#</th><th>Arquivo</th><th>Zona</th><th>E (m)</th><th>N (m)</th><th>Altitude (m)</th><th>Data/Hora</th></tr></thead>
             <tbody id="ext-tbody"></tbody>
           </table>
         </div>
@@ -300,11 +300,12 @@
         <span class="info-title">📌 Informar Coordenadas / Importar Arquivos</span>
         Esta ferramenta oferece dois caminhos para visualizar dados no mapa: <strong>digitar coordenadas UTM manualmente</strong> (por exemplo, as impressas em fotos ou relatórios) <strong>ou</strong> <strong>importar arquivos geoespaciais</strong> já existentes.
         <ul>
-          <li><strong>Entrada manual:</strong> informe Nome, Fuso, Zona, Este e Norte de cada ponto; o sistema converte e plota automaticamente.</li>
+          <li><strong>Entrada manual:</strong> informe Nome, Fuso, Zona, Este e Norte de cada ponto; novas entradas pré-preenchem Fuso/Zona e numeram o Nome a partir da primeira, e valores colados com separadores de milhar são normalizados automaticamente.</li>
           <li><strong>Importar arquivo geoespacial:</strong> aceita KML, KMZ, GeoJSON, GPX, GTM (GPS TrackMaker) e Shapefile — compactado em <strong>.zip</strong> (inclusive contendo qualquer arquivo geoespacial válido) ou como pasta com os componentes (.shp, .shx, .dbf, .prj).</li>
           <li><strong>Camadas importadas:</strong> aparecem no painel agrupadas por tipologia na ordem <strong>📍 ponto, ➖ linha, ⬛ polígono</strong> (pontos ordenados pela quantidade detectada, do maior para o menor), com cor personalizável.</li>
           <li><strong>Verificação de trilhas:</strong> ao importar trilhas a pé (GPX, GTM ou Shapefile de trilha), o sistema analisa a autenticidade do percurso e exibe um selo no painel (✅ autêntica / ⚠️ possíveis alterações) — clique nele para ver a análise detalhada.</li>
-          <li><strong>Ferramentas do mapa:</strong> meça distâncias, calcule a área de polígonos (m², km² e hectares) e o comprimento de linhas importadas pelos botões do rodapé; em zoom aproximado, consulte o histórico de imagens de satélite (Esri Wayback).</li>
+          <li><strong>Ferramentas do mapa:</strong> meça distâncias, calcule a área de polígonos (m², km² e hectares) e o comprimento de linhas importadas pelos botões do rodapé; use a coluna 🔗 da tabela para ligar pontos e medir a linha/polígono formado; em zoom aproximado, consulte o histórico de imagens de satélite (Esri Wayback).</li>
+          <li><strong>Buffer AID × ADA:</strong> ao importar camadas com denominação "ADA" e "AID", a ferramenta Área e comprimento verifica automaticamente se a AID mantém o buffer mínimo de 250 m no entorno da ADA, informando as distâncias entre as bordas.</li>
           <li><strong>Exportação:</strong> botão único <strong>Exportar</strong> com escolha de formato — KML, Shapefile .zip ou GeoJSON.</li>
         </ul>
         <span class="info-note">Shapefile pode ser enviado compactado em .zip ou como pasta com os arquivos componentes (.shp, .shx, .dbf e, idealmente, .prj). Limite de 50 MB por envio. Passe o cursor sobre os botões para ver o que cada um faz.</span>
@@ -345,7 +346,7 @@
         </div>
         <div class="pane-scroll">
           <table>
-            <thead><tr><th>#</th><th>Nome</th><th>Zona</th><th>E (m)</th><th>N (m)</th></tr></thead>
+            <thead><tr><th class="th-link" title="Ligar pontos: marque para destacar no mapa e traçar uma linha na ordem de seleção">🔗</th><th>#</th><th>Nome</th><th>Zona</th><th>E (m)</th><th>N (m)</th></tr></thead>
             <tbody id="inf-tbody"></tbody>
           </table>
         </div>
@@ -378,6 +379,6 @@
 
 </main>
 
-<script src="js/app.js"></script>
+<script src="js/app.js?v=20260711185444"></script>
 </body>
 </html>

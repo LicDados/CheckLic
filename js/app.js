@@ -220,6 +220,21 @@ function buildMap(divId, key) {
     { maxZoom:22, maxNativeZoom:19, attribution:'Tiles © Esri' }
   );
 
+  // ── OpenTopoMap: mapa topográfico com CURVAS DE NÍVEL (cotas de altitude)
+  //    e relevo sombreado embutidos no próprio tile raster (SRTM). ──
+  const topo = L.tileLayer(
+    'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    { maxZoom:22, maxNativeZoom:17, subdomains:'abc',
+      attribution:'© <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA) | dados © OpenStreetMap, SRTM' }
+  );
+
+  // ── Esri World Hillshade: relevo sombreado (hipsometria visual) global,
+  //    tiles raster pré-processados pela Esri — leve, sem chave de API. ──
+  const hillshade = L.tileLayer(
+    'https://services.arcgisonline.com/arcgis/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',
+    { maxZoom:22, maxNativeZoom:16, attribution:'Hillshade © Esri' }
+  );
+
   // Fundo vetorial em branco (sem tiles, apenas cor de fundo do mapa)
   const blank = L.layerGroup();
   blank.on('add', ()=>{ m.getContainer().style.background = 'var(--bg)'; });
@@ -255,18 +270,33 @@ function buildMap(divId, key) {
   // ── Popup rico ──
   function openInfoPopup(latlng, titulo, campos) {
     m.closePopup();
+    // Filtro global de campos técnicos: aplica-se a QUALQUER caminho que gere
+    // o popup (REST identify, HTML GetFeatureInfo, WFS), removendo colunas de
+    // uso interno do servidor ArcGIS/GeoServer que não interessam ao usuário.
+    const isTech = key => {
+      const n = String(key).toLowerCase().replace(/[\s._()]/g,'');
+      return (
+        n === 'objectid' || n === 'fid' || n === 'id' || n === 'gid' ||
+        n === 'shape' || n === 'globalid' || n === 'geom' || n === 'the_geom' ||
+        n.startsWith('shapest') ||            // shape.starea(), shape.stlength()
+        n === 'shapearea' || n === 'shapelength' ||
+        n === 'starea' || n === 'stlength' ||
+        n === 'versaoatual' || n === 'versãoatual'
+      );
+    };
+    campos = (campos || []).filter(([k]) => k === 'Camada' || !isTech(k));
     const rows = campos.map(([k,v]) =>
       `<tr>
         <td style="color:var(--muted);padding:3px 10px 3px 0;font-size:12px;white-space:nowrap;vertical-align:top">${escHtml(k)}</td>
         <td style="font-weight:500;padding:3px 0;font-size:12px">${v!==undefined&&v!==null&&v!==''?escHtml(v):'—'}</td>
       </tr>`
     ).join('');
-    L.popup({maxWidth:300, className:'rich-popup', closeButton:true, autoClose:true})
+    L.popup({maxWidth:360, minWidth:300, className:'rich-popup', closeButton:true, autoClose:true})
       .setLatLng(latlng)
       .setContent(`<div style="min-width:200px">
         <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;
              margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">${titulo}</div>
-        <table style="border-collapse:collapse;width:100%">${rows}</table>
+        <div class="rich-popup-scroll"><table style="border-collapse:collapse;width:100%">${rows}</table></div>
       </div>`)
       .openOn(m);
   }
@@ -488,6 +518,7 @@ function buildMap(divId, key) {
   //      de camadas padrão (lado direito do mapa), dentro do grupo
   //      correspondente.
   // ══════════════════════════════════════════════════════════════════
+
   const WMS_LAYERS_PRIMARY = [
     {nome:'IPHAN - ADA (SAIP)',                                              url:'https://geoserver.iphan.gov.br/geoserver/fca/wms',  layer:'fca:ada_saip_teste', tipo:'poligono', corsBlocked:true, version:'1.1.0', gfiSrs:'EPSG:4674', wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/fca/ows', typeName:'fca:ada_saip_teste', srsName:'EPSG:4674'}},
     {nome:'IPHAN - FCA (Empreendimentos cadastrados)',                      url:'https://geoserver.iphan.gov.br/geoserver/fca/wms',  layer:'fca:fca', tipo:'poligono', corsBlocked:true, wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/fca/ows', typeName:'fca:fca'}},
@@ -496,15 +527,19 @@ function buildMap(divId, key) {
     {nome:'IPHAN - Bens Materiais (SICG)',url:'https://geoserver.iphan.gov.br/geoserver/SICG/wms', layer:'SICG:tg_bem_classificacao', tipo:'ponto', corsBlocked:true, wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/SICG/ows', typeName:'SICG:tg_bem_classificacao'}},
     {nome:'IPHAN - Bens Imateriais (SICG)',   url:'https://geoserver.iphan.gov.br/geoserver/SICG/wms', layer:'SICG:tg_bem_imaterial', tipo:'ponto', corsBlocked:true, wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/SICG/ows', typeName:'SICG:tg_bem_imaterial'}},
     {nome:'ANA - Hidrografia (SNIRH)',                  url:'https://www.snirh.gov.br/arcgis/services/INDE/Camadas/MapServer/WMSServer', layer:'106', clickTolerance:8, dpi:180, noJsonp:true, tipo:'linear'},
+
+    {nome:'IBGE - Hidrografia',               url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CCAR:BC250_2025_hid', tipo:'linear'},
     {nome:'IBGE - Localidades Indígenas (Censo 2022)',      url:'https://geoservicoscenso2022.ibge.gov.br/geoserver/censo2022/ows', layer:'cete_BR_LIs_CD2022_02062025', tipo:'poligono'},
     {nome:'IBGE - Locais de Concentração de Pessoas Indígenas (Censo 2022)',url:'https://geoservicoscenso2022.ibge.gov.br/geoserver/censo2022/ows', layer:'cete_BR_LCPIs_CD2022_02062025', tipo:'ponto'},
     {nome:'IBGE - Localidades Quilombolas (Censo 2022)',      url:'https://geoservicoscenso2022.ibge.gov.br/geoserver/censo2022/ows', layer:'cete_BR_LQs_22_pt', tipo:'ponto'},    
     {nome:'IBGE - Localidades Projeto de Assentamento',      url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CGEO:APL_Localidades_Projeto_De_Assentamento', tipo:'ponto'},
     {nome:'IBGE - Territórios Quilombolas',   url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CGMAT:qg_2022_620_territorioquilombola__v02', tipo:'poligono'},   
-    {nome:'IBGE - Geomorfologia (Linear)',    url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:Geomorfologia_simbLinear_Brasil', tipo:'linear'},
-    {nome:'IBGE - Curvas de Nível',           url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CCAR:BCIM_Curva_Nivel_L', tipo:'linear'},
-    {nome:'IBGE - Hidrografia',               url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CCAR:BC250_2025_hid', tipo:'linear'},
+    {nome:'IBGE - Geomorfologia (Linear)',    url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:Geomorfologia_simbLinear_Brasil', tipo:'linear'},        
     {nome:'IBGE - Trecho Ferroviário',        url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CCAR:BC250_2025_fer_trecho_ferroviario_l', tipo:'linear'},
+    {nome:'IBGE - Curvas de Nível',           url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CCAR:BCIM_Curva_Nivel_L', tipo:'linear'},    
+    {nome:'EB/DSG - Curvas de Nível', tipo:'ponto', url:'https://bdgex.eb.mil.br/mapcache3857', layer:[
+      'curva_nivel25','curva_nivel50','curva_nivel100','curva_nivel250',
+    ].join(',')},
     {nome:'VALEC - Trecho Ferroviário', url:'https://geoservicos.inde.gov.br/geoserver/VALEC/ows', layer:'trecho_ferroviario_infrasa', tipo:'linear'},
     {nome:'DNIT - Rodovias',      url:'https://geoservicos.inde.gov.br/geoserver/DNIT/ows', layer:'cide_2024_25,snv_202507a', tipo:'linear'},
     {nome:'ICMBio - Cavidades Naturais Subterrâneas', url:'https://geoservicos.inde.gov.br/geoserver/ICMBio/ows', layer:'canie_052026_p', tipo:'ponto'},
@@ -524,11 +559,20 @@ function buildMap(divId, key) {
       'DPHDM:fernando_de_noronha_naufragios','DPHDM:ar_naufragios','DPHDM:ilha_da_trindade_naufragios',
       'DPHDM:rs_principal_shp',
     ].join(',')},
+    {nome:'ANM - Mineração (SIGMINE)', url:'https://geo.anm.gov.br/arcgis/services/SIGMINE/dados_anm/MapServer/WMSServer', layer:'0,1,2,3,4', tipo:'poligono', corsBlocked:true, noJsonp:true, htmlOnly:true, version:'1.1.1', gfiSrs:'EPSG:4326', arcgisRest:'https://geo.anm.gov.br/arcgis/rest/services/SIGMINE/dados_anm/MapServer', arcgisLayers:'0,1,2,3,4', clickTolerance:5},
+    {nome:'ANEEL - Energia (SIGEL)',   url:'https://sigel.aneel.gov.br/arcgis/services/PORTAL/WFS/MapServer/WMSServer', layer:'1,2,3,6,7,8,9,10,12,13,14,15', tipo:'misto', corsBlocked:true, noJsonp:true, htmlOnly:true, version:'1.1.1', gfiSrs:'EPSG:4326', clickTolerance:6, arcgisRest:'https://sigel.aneel.gov.br/arcgis/rest/services/PORTAL/WFS/MapServer', arcgisLayers:'0,1,2,3,5,6,7,8,9,12,13,14', excludeNames:'atua\u00e7\u00e3o das distribuidoras|distribuidora por|reservat\u00f3rio na', layerNames:{0:'Aerogeradores',1:'Central Geradora E\u00f3lica',2:'Central Geradora Solar Fotovoltaica',3:'Usina Termel\u00e9trica',5:'Usina Termonuclear',6:'Central Geradora Hidrel\u00e9trica',7:'Pequena Central Hidrel\u00e9trica',8:'Usina Hidrel\u00e9trica',9:'Linha de Transmiss\u00e3o de EOL',12:'Parque E\u00f3lico',13:'Arranjo Geral da AHE',14:'Declara\u00e7\u00e3o de Utilidade P\u00fablica'}},
   ];
   // Camadas que devem ficar em segundo plano (renderizadas "abaixo" das
   // demais camadas quando ativas simultaneamente). São polígonos preenchidos
   // normais (não em modo circunscrito).
   const WMS_LAYERS_BACKGROUND = [
+    {nome:'EB/DSG - Modelo Digital de Superfície (MDS)', tipo:'poligono', url:'https://bdgex.eb.mil.br/mapcache3857', layer:[
+      'mds25','mds50','mds250',
+    ].join(',')},
+    {nome:'EB/DSG - Cartas Topográficas (CTM)', tipo:'poligono', url:'https://bdgex.eb.mil.br/mapcache3857', layer:[
+      'ctm25','ctm50','ctm100','ctm250',
+    ].join(',')},
+    {nome:'IBGE - Hipsometria 2022', url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CGEO:andb2022_021801', tipo:'poligono'},          
     {nome:'IBGE - Geologia', url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:Geologia_area_Brasil', tipo:'poligono'},
     {nome:'IBGE - Relevo', url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:geomorfologia_5000', tipo:'poligono'},    
     {nome:'IBGE - Vegetação', url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:vegetacao_area_brasil', tipo:'poligono'},     
@@ -636,7 +680,7 @@ function buildMap(divId, key) {
 
   // ── Controle de camadas ──
   const layersControl = L.control.layers(
-    { 'OpenStreetMap': osm, 'Satélite (ESRI)': sat, 'Vetorial puro': blank },
+    { 'OpenStreetMap': osm, 'Satélite (Esri)': sat, 'OpenTopoMap': topo, 'World Hillshade (Esri)': hillshade, 'Vetorial puro': blank },
     {
       'Limites Estaduais': estadoGroup,
       'Limites Municipais': munGroup,
@@ -646,6 +690,35 @@ function buildMap(divId, key) {
     },
     { position:'topright', collapsed:false }
   ).addTo(m);
+
+  // ── Segunda divisória no painel de camadas: separa as camadas WMS
+  //    "normais" (IPHAN, FUNAI, ANM, ANEEL etc.) das camadas de POLÍGONO
+  //    GRANDE renderizadas em segundo plano (Exército e IBGE), que ficam no
+  //    final da lista. Usa o mesmo estilo da divisória nativa do Leaflet
+  //    (entre bases e camadas). ──
+  (function insertBackgroundSeparator(){
+    const container = layersControl.getContainer();
+    if(!container || !WMS_LAYERS_BACKGROUND.length) return;
+    const firstBgName = WMS_LAYERS_BACKGROUND[0].nome;
+    const overlaysList = container.querySelector('.leaflet-control-layers-overlays');
+    if(!overlaysList) return;
+    // Localiza o <label> cujo texto corresponde à primeira camada de fundo
+    const labels = [...overlaysList.querySelectorAll('label')];
+    const target = labels.find(l => l.textContent.trim().startsWith(firstBgName));
+    if(!target) return;
+    const hr = document.createElement('hr');
+    hr.className = 'leaflet-control-layers-separator';
+    // insere a divisória IMEDIATAMENTE ANTES do rótulo-alvo (respeitando a
+    // estrutura de wrapper que o Leaflet usa para cada item da lista)
+    const wrapper = target.closest('div') && target.closest('div').parentElement === overlaysList
+      ? target.closest('div') : target;
+    overlaysList.insertBefore(hr, wrapper);
+  })();
+
+  // ── Escala gráfica (barra): alterna automaticamente entre km e m conforme
+  //    o zoom (como na INDE). Canto inferior esquerdo, na mesma linha do
+  //    copyright (elevada acima da faixa do rodapé via CSS). ──
+  L.control.scale({ position:'bottomleft', metric:true, imperial:false, maxWidth:140 }).addTo(m);
 
   // Barra de rolagem caso a lista de camadas exceda a altura da tela
   const lcContainer = layersControl.getContainer();
@@ -736,7 +809,7 @@ function buildMap(divId, key) {
       const params = new URLSearchParams({
         service:'WMS', version, request:'GetFeatureInfo',
         layers: def.layer, query_layers: def.layer,
-        info_format:'application/json',
+        info_format: def.infoFormat || 'application/json',
         feature_count:'10',
         width: size.x, height: size.y,
         [isV13?'i':'x']: Math.round(point.x),
@@ -766,12 +839,26 @@ function buildMap(divId, key) {
       try{
         let data;
         const reqUrl = def.url + '?' + params.toString();
-        let resp = await fetchWithCorsFallback(reqUrl, def.corsBlocked);
+        // Caminho PRIMÁRIO para servidores ArcGIS (ex.: ANM): consulta REST
+        // "identify", que retorna JSON nativo e confiável.
+        if(def.arcgisRest){
+          const rowsRest = await arcgisIdentify(def, latlng);
+          console.info(`[GeoTools] ${def.nome}: tentativa ArcGIS REST`, rowsRest ? `retornou ${rowsRest.length} campos` : 'sem retorno');
+          if(rowsRest && rowsRest.length){
+            openInfoPopup(latlng, `🗺️ ${def.nome}`, rowsRest);
+            foundAny = true;
+            break;
+          }
+        }
+        // Para serviços que devolvem HTML de forma mais confiável que JSON
+        // (ArcGIS Server, ex.: ANM), pulamos a tentativa JSON e vamos direto
+        // ao fluxo HTML/WFS abaixo.
+        let resp = def.htmlOnly ? null : await fetchWithCorsFallback(reqUrl, def.corsBlocked);
         if(resp && resp.ok){
           try{ data = await resp.json(); }
           catch(parseErr){ data = null; } // resposta não é JSON válido (ex: HTML/erro)
         }
-        if(!data && !def.noJsonp){
+        if(!data && !def.noJsonp && !def.htmlOnly){
           // Tenta JSONP (suportado pelo GeoServer via
           // info_format=text/javascript&format_options=callback:NOME)
           data = await jsonpGetFeatureInfo(def.url, params);
@@ -780,7 +867,7 @@ function buildMap(divId, key) {
 
         if(!data || !data.features || !data.features.length){
           // Fallback 1: tenta info_format=text/html e extrai a primeira tabela
-          const rowsFromHtml = await htmlGetFeatureInfo(def.url, params, def.corsBlocked);
+          const rowsFromHtml = await htmlGetFeatureInfo(def.url, params, def.corsBlocked, def.layerNames ? Object.values(def.layerNames) : null, def.inferLayer);
           console.info(`[GeoTools] ${def.nome}: tentativa HTML`, rowsFromHtml ? `retornou ${rowsFromHtml.length} linhas` : 'sem retorno');
           if(rowsFromHtml && rowsFromHtml.length){
             openInfoPopup(latlng, `🗺️ ${def.nome}`, rowsFromHtml);
@@ -847,7 +934,7 @@ function buildMap(divId, key) {
   // Fallback final: info_format=text/html — extrai a primeira tabela de
   // atributos retornada pelo GeoServer (útil quando JSON/JSONP não estão
   // disponíveis para a camada).
-  async function htmlGetFeatureInfo(url, params, skipDirect){
+  async function htmlGetFeatureInfo(url, params, skipDirect, knownNames, infer){
     try{
       const p = new URLSearchParams(params);
       p.set('info_format','text/html');
@@ -856,14 +943,59 @@ function buildMap(divId, key) {
       const html = await resp.text();
       if(!html || !/<table/i.test(html)) return null;
       const doc = new DOMParser().parseFromString(html, 'text/html');
-      const table = doc.querySelector('table');
-      if(!table) return null;
-      const rows = [];
-      table.querySelectorAll('tr').forEach(tr=>{
-        const cells = [...tr.querySelectorAll('th,td')].map(c=>c.textContent.trim());
-        if(cells.length===2 && cells[0]) rows.push([cells[0], cells[1]||'—']);
-      });
-      return rows.length ? rows.slice(0,10) : null;
+      const tables = [...doc.querySelectorAll('table')];
+      if(!tables.length) return null;
+
+      // Tenta descobrir o NOME DA CAMADA no HTML do ArcGIS Server. O servidor
+      // costuma inserir o nome da camada como um cabeçalho (caption/th com
+      // colspan, ou um <b>/<font> antes da tabela). Procuramos por um texto que
+      // corresponda a um dos nomes conhecidos (def.layerNames), se fornecido.
+      let detectedLayer = null;
+      if(knownNames && knownNames.length){
+        const fullText = doc.body ? doc.body.textContent : html;
+        for(const nm of knownNames){
+          if(fullText && fullText.toLowerCase().includes(nm.toLowerCase())){ detectedLayer = nm; break; }
+        }
+      }
+      const withLayer = rows => {
+        // Se não achou o nome no texto, tenta INFERIR pela assinatura de campos
+        // (o HTML do ArcGIS não inclui o nome da camada no corpo da resposta).
+        let layer = detectedLayer;
+        if(!layer && infer){
+          const keys = rows.map(r=>String(r[0]).toLowerCase());
+          const has = re => keys.some(k=>re.test(k));
+          layer = infer(keys, has, rows);
+        }
+        if(layer) return [['Camada', layer], ...rows];
+        return rows;
+      };
+
+      // Formato 1 (GeoServer): tabela "campo | valor" (2 colunas por linha).
+      for(const table of tables){
+        const rows = [];
+        table.querySelectorAll('tr').forEach(tr=>{
+          const cells = [...tr.querySelectorAll('th,td')].map(c=>c.textContent.trim());
+          if(cells.length===2 && cells[0]) rows.push([cells[0], cells[1]||'—']);
+        });
+        if(rows.length >= 2) return withLayer(rows.slice(0,20));
+      }
+
+      // Formato 2 (ArcGIS Server): tabela "larga" — 1ª linha = cabeçalhos
+      // (campos), 2ª linha = valores. Transpõe para pares campo/valor.
+      for(const table of tables){
+        const trs = [...table.querySelectorAll('tr')];
+        if(trs.length < 2) continue;
+        const headers = [...trs[0].querySelectorAll('th,td')].map(c=>c.textContent.trim());
+        const values  = [...trs[1].querySelectorAll('th,td')].map(c=>c.textContent.trim());
+        if(headers.length >= 2 && headers.length === values.length){
+          const rows = [];
+          for(let i=0;i<headers.length;i++){
+            if(headers[i]) rows.push([headers[i], values[i] || '—']);
+          }
+          if(rows.length) return withLayer(rows.slice(0,20));
+        }
+      }
+      return null;
     }catch(e){
       return null; // CORS ou outro erro — ignora silenciosamente
     }
@@ -898,6 +1030,99 @@ function buildMap(divId, key) {
       }catch(e){ /* tenta o próximo */ }
     }
     return null;
+  }
+
+  // Consulta via API REST do ArcGIS (operação "identify" do MapServer). É o
+  // método NATIVO dos servidores ArcGIS (ex.: ANM/SIGMINE) — retorna JSON
+  // limpo com todos os campos, sem depender dos templates HTML/GeoJSON do WMS
+  // (que muitas vezes não estão habilitados). O 'def.arcgisRest' aponta para o
+  // MapServer (…/MapServer) e 'def.arcgisLayers' lista os IDs consultados.
+  async function arcgisIdentify(def, latlng){
+    try{
+      const b = m.getBounds(), size = m.getSize();
+      const sw = b.getSouthWest(), ne = b.getNorthEast();
+      const wanted = String(def.arcgisLayers || def.layer);
+      const wantedIds = wanted.split(',').map(s=>parseInt(s,10));
+      const params = new URLSearchParams({
+        f:'json', geometryType:'esriGeometryPoint',
+        geometry: `${latlng.lng},${latlng.lat}`,
+        sr:'4326',
+        layers: 'top:' + wanted,
+        tolerance: String(def.clickTolerance || 5),
+        mapExtent: `${sw.lng},${sw.lat},${ne.lng},${ne.lat}`,
+        imageDisplay: `${size.x},${size.y},96`,
+        returnGeometry:'false',
+      });
+      const url = def.arcgisRest.replace(/\/$/,'') + '/identify?' + params.toString();
+      const resp = await fetchWithCorsFallback(url, def.corsBlocked);
+      if(!resp || !resp.ok){ console.info(`[GeoTools] ${def.nome}: identify sem resposta HTTP`); return null; }
+      let data; try{ data = await resp.json(); }catch(e){ console.info(`[GeoTools] ${def.nome}: identify resposta não-JSON`); return null; }
+      if(!data || !data.results || !data.results.length){ console.info(`[GeoTools] ${def.nome}: identify 0 resultados`); return null; }
+      console.info(`[GeoTools] ${def.nome}: identify retornou`, data.results.map(r=>`${r.layerId}:${r.layerName||'(sem nome)'}`).join(', '));
+
+      // FILTRAGEM NO CLIENTE (rede de segurança): o servidor da ANEEL às vezes
+      // devolve camadas fora da lista pedida (ex.: a camada de fundo "Área de
+      // atuação das distribuidoras"). A numeração REST pode diferir da WMS, por
+      // isso filtramos preferencialmente por NOME (includeNames), que é estável.
+      const excludeRe = def.excludeNames ? new RegExp(def.excludeNames, 'i') : null;
+      const includeRe = def.includeNames ? new RegExp(def.includeNames, 'i') : null;
+      let results;
+      if(includeRe){
+        // aceita apenas resultados cujo layerName casa com a lista de nomes
+        // desejados (e nunca os excluídos)
+        results = data.results.filter(r=>{
+          const nm = r.layerName || '';
+          if(excludeRe && excludeRe.test(nm)) return false;
+          return includeRe.test(nm);
+        });
+      } else {
+        results = data.results.filter(r=>{
+          if(excludeRe && r.layerName && excludeRe.test(r.layerName)) return false;
+          return wantedIds.includes(r.layerId);
+        });
+        if(!results.length && excludeRe){
+          results = data.results.filter(r=> !(r.layerName && excludeRe.test(r.layerName)));
+        }
+      }
+      if(!results.length){ console.info(`[GeoTools] ${def.nome}: identify sem camada válida após filtro`); return null; }
+
+      // Prioriza a camada de MENOR índice na lista (mais ao topo): garante que
+      // pontos/linhas (ex.: Arranjo Geral de AHE) venham antes de grandes
+      // polígonos de fundo que coincidam no clique.
+      const rank = id => { const i = wantedIds.indexOf(id); return i < 0 ? 999 : i; };
+      const sorted = results.sort((a,b)=> rank(a.layerId) - rank(b.layerId));
+      const r0 = sorted[0];
+      const rows = [];
+      // Nome da camada: usa o layerName do servidor; se vier vazio, resolve
+      // pelo mapa id→nome (def.layerNames) informado na definição da camada.
+      let layerName = r0.layerName;
+      if((!layerName || !layerName.trim()) && def.layerNames){
+        layerName = def.layerNames[r0.layerId] || null;
+      }
+      if(layerName) rows.push(['Camada', layerName]);
+
+      // Campos técnicos a ocultar (comparação normalizada, sem depender de
+      // grafia exata de maiúsculas/pontuação): OBJECTID, FID, ID, Shape e
+      // variantes Shape.STArea()/STLength(), Shape_Area/Length, "Versão atual".
+      const isTechnical = key => {
+        const n = String(key).toLowerCase().replace(/[\s._()]/g,'');
+        return (
+          n === 'objectid' || n === 'fid' || n === 'id' ||
+          n === 'shape' || n === 'globalid' ||
+          n.startsWith('shapest') ||          // shape.starea(), shape.stlength()
+          n === 'shapearea' || n === 'shapelength' ||
+          n === 'versaoatual' || n === 'versãoatual'
+        );
+      };
+      const attrs = r0.attributes || {};
+      for(const k in attrs){
+        const v = attrs[k];
+        if(v === null || v === undefined || v === '' || v === 'Null') continue;
+        if(isTechnical(k)) continue;
+        rows.push([k, String(v)]);
+      }
+      return rows.length ? rows.slice(0,25) : null;
+    }catch(e){ return null; }
   }
 
   async function wfsSpatialQuery(wfsDef, latlng, skipDirect){
@@ -1195,6 +1420,15 @@ function buildMap(divId, key) {
   //    ativos e o clique não atingir outra camada, exibe coordenadas ──
   m.on('click', async e => {
     if (measureState[key] && measureState[key].active) return; // ferramenta de medição em uso
+    // Ignora cliques sobre a faixa do RODAPÉ: como ela tem pointer-events:none,
+    // o clique "atravessa" até o mapa — mas não deve acionar consultas nem o
+    // popup de coordenadas.
+    const footerEl = document.getElementById('footer-'+key);
+    if(footerEl && e.originalEvent){
+      const fr = footerEl.getBoundingClientRect();
+      const oe = e.originalEvent;
+      if(oe.clientY >= fr.top && oe.clientX >= fr.left && oe.clientX <= fr.right) return;
+    }
     // PRIORIDADE 1: ponto ou linha importado (feições pequenas e específicas)
     if (uploadedPointOrLineHit(key, e.latlng)) return;
     // PRIORIDADE 2: polígono importado — tem prioridade sobre as camadas WMS,
@@ -1640,14 +1874,184 @@ function buildAreaPanelList(key){
     const icon = l.hasPolygon ? '⬛' : '➖';
     return `<button class="area-layer-btn" onclick="selectAreaLayer('${key}','${l.id}')"><span class="alb-icon">${icon}</span><span class="alb-name">${escHtml(l.name)}</span></button>`;
   }).join('');
+  // Seção extra: verificação de buffer AID × ADA (aparece quando camadas com
+  // denominação "ADA" e "AID" são detectadas entre os polígonos importados)
+  const pair = findAdaAidEntries(key);
+  const adaAidHtml = pair ? `
+    <div class="color-panel-section">
+      <div class="color-panel-lbl">Buffer AID × ADA</div>
+      <button class="area-layer-btn adaaid-btn" onclick="checkAdaAidBuffer('${key}')"><span class="alb-icon">🛟</span><span class="alb-name">Verificar buffer de 250 m (${escHtml(pair.aid.name)} × ${escHtml(pair.ada.name)})</span></button>
+      <div class="measure-result" id="adaaid-result-${key}" style="display:none"></div>
+    </div>` : '';
+  // Seção extra: cadeia de pontos LIGADOS na tabela (coluna 🔗).
+  // Fechada (último ponto == primeiro) → polígono com área; aberta → linha
+  // com comprimento.
+  const chain = linkedChainInfo(key);
+  let linkedHtml = '';
+  if(chain){
+    const icon = chain.closed ? '⬛' : '➖';
+    const lbl = chain.closed
+      ? `Polígono dos pontos ligados (${chain.coords.length-1} pontos)`
+      : `Linha dos pontos ligados (${chain.coords.length} pontos)`;
+    linkedHtml = `
+    <div class="color-panel-section">
+      <div class="color-panel-lbl">Pontos ligados (tabela)</div>
+      <button class="area-layer-btn" id="linkedpoly-btn-${key}" onclick="selectLinkedFeature('${key}')"><span class="alb-icon">${icon}</span><span class="alb-name">${lbl}</span></button>
+    </div>`;
+  }
   panel.innerHTML = `
     <div class="measure-panel-hdr"><span>📐 Área e comprimento</span><span class="mp-close" onclick="closeAreaPopup('${key}')">✕</span></div>
     <div class="color-panel-section">
       <div class="color-panel-lbl">Camadas importadas (polígono e linha)</div>
       <div class="area-layer-list">${opts || '<div class="measure-hint">Nenhuma camada de polígono ou linha importada.</div>'}</div>
     </div>
+    ${linkedHtml}
+    ${adaAidHtml}
     <div class="measure-hint" id="ahint-${key}">Selecione uma camada acima: polígonos exibem a área total; linhas exibem o comprimento total.</div>
     <div class="measure-result" id="aresult-${key}">—</div>
+  `;
+}
+
+// ── Verificação de buffer AID × ADA ──
+// Detecta, entre os polígonos importados, camadas cujos nomes contenham as
+// denominações "ADA" e "AID" (como palavras isoladas — "ADA.kml",
+// "aid_250m.kml", "ADA - Empreendimento.shp", etc.).
+function findAdaAidEntries(key){
+  const polys = (uploadedLayers[key]||[]).filter(l=>l.hasPolygon);
+  const isAda = n => /(^|[^a-z0-9])ada([^a-z0-9]|$)/i.test(n);
+  const isAid = n => /(^|[^a-z0-9])aid([^a-z0-9]|$)/i.test(n);
+  const ada = polys.find(l=>isAda(l.name) && !isAid(l.name));
+  const aid = polys.find(l=>isAid(l.name));
+  return (ada && aid) ? {ada, aid} : null;
+}
+
+// Extrai todos os anéis (contornos) de polígonos de um GeoJSON: [[lat,lon],...]
+function _polygonRings(gj){
+  const rings = [];
+  (gj.features||[]).forEach(f=>{
+    const g = f.geometry; if(!g) return;
+    const polys = g.type==='Polygon' ? [g.coordinates]
+                : g.type==='MultiPolygon' ? g.coordinates : [];
+    polys.forEach(poly => poly.forEach(ring => {
+      rings.push(ring.map(c=>[c[1], c[0]])); // [lat,lon]
+    }));
+  });
+  return rings;
+}
+
+// Distância (m) de um ponto a um segmento, em projeção local equiretangular
+// (precisa o bastante para distâncias de centenas de metros).
+function _ptSegDistM(p, a, b){
+  const lat0 = p[0]*Math.PI/180;
+  const mx = 111320*Math.cos(lat0), my = 110540; // m por grau (lon, lat)
+  const px=(p[1]-a[1])*mx, py=(p[0]-a[0])*my;
+  const bx=(b[1]-a[1])*mx, by=(b[0]-a[0])*my;
+  const len2 = bx*bx+by*by;
+  let t = len2 ? (px*bx+py*by)/len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const dx = px-t*bx, dy = py-t*by;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+
+// Menor distância (m) de um ponto ao conjunto de anéis
+function _ptToRingsM(p, rings){
+  let min = Infinity;
+  for(const ring of rings){
+    for(let i=1;i<ring.length;i++){
+      const d = _ptSegDistM(p, ring[i-1], ring[i]);
+      if(d < min) min = d;
+    }
+  }
+  return min;
+}
+
+// Ponto dentro de algum polígono do GeoJSON (ray casting, com buracos)
+function _gjContains(gj, lat, lon){
+  for(const f of (gj.features||[])){
+    const g = f.geometry; if(!g) continue;
+    const polys = g.type==='Polygon' ? [g.coordinates]
+                : g.type==='MultiPolygon' ? g.coordinates : [];
+    for(const poly of polys){
+      const inRing = ring => {
+        let inside = false;
+        for(let i=0, j=ring.length-1; i<ring.length; j=i++){
+          const xi=ring[i][0], yi=ring[i][1], xj=ring[j][0], yj=ring[j][1];
+          if(((yi>lat)!==(yj>lat)) && (lon < (xj-xi)*(lat-yi)/(yj-yi)+xi)) inside = !inside;
+        }
+        return inside;
+      };
+      if(inRing(poly[0])){
+        let inHole = false;
+        for(let h=1; h<poly.length; h++){ if(inRing(poly[h])){ inHole=true; break; } }
+        if(!inHole) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function checkAdaAidBuffer(key){
+  const pair = findAdaAidEntries(key);
+  const out = document.getElementById('adaaid-result-'+key);
+  if(!pair || !out) return;
+  out.style.display = '';
+
+  const adaRings = _polygonRings(pair.ada.geojson);
+  const aidRings = _polygonRings(pair.aid.geojson);
+  if(!adaRings.length || !aidRings.length){
+    out.innerHTML = '<div class="measure-hint">Não foi possível extrair os contornos das camadas.</div>';
+    return;
+  }
+
+  // ADA contida na AID? (amostra os vértices da ADA)
+  let allInside = true;
+  for(const ring of adaRings){
+    for(const p of ring){
+      if(!_gjContains(pair.aid.geojson, p[0], p[1])){ allInside = false; break; }
+    }
+    if(!allInside) break;
+  }
+
+  // Distância da borda da ADA à borda da AID (mín. e máx. sobre os vértices)
+  let minD = Infinity, maxD = 0;
+  for(const ring of adaRings){
+    for(const p of ring){
+      const d = _ptToRingsM(p, aidRings);
+      if(d < minD) minD = d;
+      if(d > maxD) maxD = d;
+    }
+  }
+  // Refina o mínimo no sentido inverso (vértices da AID → bordas da ADA)
+  for(const ring of aidRings){
+    for(const p of ring){
+      const d = _ptToRingsM(p, adaRings);
+      if(d < minD) minD = d;
+    }
+  }
+
+  const fmt = v => v.toLocaleString('pt-BR', {maximumFractionDigits:1});
+  // Tolerância técnica: buffers gerados em SIG aproximam os arcos por
+  // segmentos retos (discretização). Com a segmentação padrão do QGIS, um
+  // buffer legítimo de 250 m pode medir até ~3-4 m a menos nos cantos
+  // convexos. Por isso: ≥249,5 m = pleno; ≥246 m = compatível (diferença
+  // atribuível à discretização); abaixo disso = insuficiente.
+  let statusHtml;
+  if(!allInside){
+    statusHtml = `<div class="adaaid-status warn">⚠️ A ADA não está totalmente contida na AID — as bordas se cruzam ou a AID não envolve a ADA.</div>`;
+  } else if(minD > 250.5){
+    statusHtml = `<div class="adaaid-status ok">✅ A AID está ACIMA de 250 m no entorno da ADA (menor distância: ${fmt(minD)} m) — atende ao buffer mínimo.</div>`;
+  } else if(minD >= 249.5){
+    statusHtml = `<div class="adaaid-status ok">✅ A AID atende exatamente ao buffer mínimo de 250 m no entorno da ADA.</div>`;
+  } else if(minD >= 246){
+    statusHtml = `<div class="adaaid-status ok">✅ AID compatível com buffer de 250 m — a menor distância (${fmt(minD)} m) fica dentro da tolerância de discretização dos arcos do buffer (~3-4 m).</div>`;
+  } else {
+    statusHtml = `<div class="adaaid-status warn">⚠️ A AID está ABAIXO de 250 m no entorno da ADA em pelo menos um trecho.</div>`;
+  }
+  out.innerHTML = `
+    ${statusHtml}
+    <div class="area-result-row"><span>Menor distância entre as bordas</span><b>${fmt(minD)} m</b></div>
+    <div class="area-result-row"><span>Maior distância (borda da ADA à AID)</span><b>${fmt(maxD)} m</b></div>
+    <div class="measure-hint" style="margin:8px 0 0">Medição pelas distâncias entre os contornos das camadas (vértice a segmento). Camadas detectadas: ADA = "${escHtml(pair.ada.name)}", AID = "${escHtml(pair.aid.name)}".</div>
   `;
 }
 
@@ -2090,10 +2494,12 @@ function reorderGeoLayerList(key){
 function updateAreaButton(key){
   const btn = document.getElementById('areaBtn-'+key);
   if(!btn) return;
-  const hasAny = (uploadedLayers[key]||[]).some(l=>l.hasPolygon || l.hasLine);
+  const hasLayer = (uploadedLayers[key]||[]).some(l=>l.hasPolygon || l.hasLine);
+  const hasLinked = !!linkedChainInfo(key); // cadeia de pontos ligados (🔗)
+  const hasAny = hasLayer || hasLinked;
   btn.disabled = !hasAny;
-  btn.title = hasAny ? 'Calcular área de polígonos e comprimento de linhas importadas'
-                     : 'Disponível quando houver polígono ou linha importada';
+  btn.title = hasAny ? 'Calcular área de polígonos, comprimento de linhas e medidas dos pontos ligados'
+                     : 'Disponível quando houver polígono/linha importada ou 2+ pontos ligados na tabela';
 }
 
 function bindGeoFeaturePopup(layer, feature, key){
@@ -3116,6 +3522,143 @@ function wStr(dv,o,s){for(let i=0;i<s.length;i++)dv.setUint8(o+i,s.charCodeAt(i)
 function saveBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);}
 
 // ════════════════════════════════════════
+//  LIGAR PONTOS (coluna 🔗 das tabelas)
+// ════════════════════════════════════════
+// O usuário marca pontos na tabela; cada ponto marcado é destacado no mapa e
+// uma linha é traçada ligando-os NA ORDEM DE SELEÇÃO. Serve para visualizar
+// uma linha ou o contorno de um polígono de interesse.
+const pointLinkSel = {conv:[], ext:[], inf:[]};   // índices na ordem de seleção
+const pointLinkLayers = {conv:null, ext:null, inf:null}; // {line, rings[]}
+
+function togglePointLink(key, idx, cb){
+  const sel = pointLinkSel[key];
+  if(cb.checked){
+    if(!sel.includes(idx)) sel.push(idx);
+  } else {
+    const p = sel.indexOf(idx);
+    if(p >= 0) sel.splice(p, 1);
+  }
+  redrawPointLink(key);
+}
+
+function redrawPointLink(key){
+  const m = maps[key];
+  if(!m) return;
+  // remove renderização anterior
+  const old = pointLinkLayers[key];
+  if(old){
+    try{ if(old.line) m.removeLayer(old.line); }catch(e){}
+    (old.rings||[]).forEach(r=>{ try{ m.removeLayer(r); }catch(e){} });
+  }
+  pointLinkLayers[key] = null;
+
+  const data = _exportDataFor(key);
+  const pts = pointLinkSel[key].map(i=>data[i]).filter(Boolean);
+  if(!pts.length){
+    // seleção esvaziada: ainda assim atualiza o botão/painel de medição
+    updateAreaButton(key);
+    const p0 = document.getElementById('area-'+key);
+    if(p0 && p0.classList.contains('open')) buildAreaPanelList(key);
+    return;
+  }
+
+  const rings = pts.map(p => L.circleMarker([p.lat, p.lon], {
+    radius:11, color:'#ffb020', weight:3, fill:false, interactive:false
+  }).addTo(m));
+
+  let line = null;
+  if(pts.length >= 2){
+    line = L.polyline(pts.map(p=>[p.lat, p.lon]), {
+      color:'#ffb020', weight:3, dashArray:'6 4', interactive:false
+    }).addTo(m);
+  }
+  pointLinkLayers[key] = {line, rings};
+  // Habilita/atualiza a ferramenta "Área e comprimento" conforme a ligação
+  // passa a formar (ou deixa de formar) um polígono.
+  updateAreaButton(key);
+  const panel = document.getElementById('area-'+key);
+  if(panel && panel.classList.contains('open')) buildAreaPanelList(key);
+}
+
+// Limpa a seleção de ligação (chamado quando a tabela é recriada/limpa)
+function resetPointLink(key){
+  pointLinkSel[key] = [];
+  redrawPointLink(key);
+}
+
+// Retorna o anel do polígono formado pelos pontos ligados, se houver ao menos
+// 3 pontos DISTINTOS (o fechamento é automático; se o usuário repetiu o
+// primeiro ponto no final, a duplicata é ignorada). Formato: [[lon,lat],...]
+// fechado (último == primeiro). Retorna null se não formar polígono.
+// Analisa a cadeia de pontos ligados (coluna 🔗) e classifica:
+// - FECHADA (polígono): o ÚLTIMO ponto selecionado tem as mesmas coordenadas
+//   do PRIMEIRO (o usuário fechou a ligação), com pelo menos 3 vértices
+//   distintos → mede ÁREA e perímetro.
+// - ABERTA (linha): 2+ pontos sem fechamento → mede apenas o COMPRIMENTO.
+// Retorna null (menos de 2 pontos) ou {coords:[[lon,lat]...], closed:bool}.
+// Para cadeia fechada, coords é o anel fechado (último == primeiro).
+function linkedChainInfo(key){
+  const data = _exportDataFor(key);
+  const raw = pointLinkSel[key].map(i=>data[i]).filter(Boolean).map(p=>[p.lon, p.lat]);
+  if(raw.length < 2) return null;
+  // fechamento explícito: último ponto selecionado == primeiro
+  const closedByUser = raw.length >= 4 &&
+    raw[0][0] === raw[raw.length-1][0] && raw[0][1] === raw[raw.length-1][1];
+  // remove duplicatas consecutivas (mantendo a ordem)
+  let pts = raw.filter((p,i)=> i===0 || p[0]!==raw[i-1][0] || p[1]!==raw[i-1][1]);
+  if(closedByUser){
+    // pts termina no primeiro (duplicado) — remove p/ contar vértices distintos
+    if(pts.length>=2 && pts[0][0]===pts[pts.length-1][0] && pts[0][1]===pts[pts.length-1][1]){
+      pts = pts.slice(0,-1);
+    }
+    if(pts.length < 3) return {coords: pts, closed:false}; // degenerado: trata como linha
+    return {coords: [...pts, pts[0]], closed:true};
+  }
+  if(pts.length < 2) return null;
+  return {coords: pts, closed:false};
+}
+
+// Calcula e exibe as medidas da cadeia de pontos ligados:
+// polígono fechado → área + perímetro; linha aberta → comprimento.
+function selectLinkedFeature(key){
+  const info = linkedChainInfo(key);
+  const res = document.getElementById('aresult-'+key);
+  const hint = document.getElementById('ahint-'+key);
+  if(!info || !res) return;
+  document.querySelectorAll(`#area-${key} .area-layer-btn`).forEach(b=>b.classList.remove('active'));
+  const btn = document.getElementById(`linkedpoly-btn-${key}`);
+  if(btn) btn.classList.add('active');
+
+  if(info.closed){
+    const ring = info.coords;
+    const gj = {type:'FeatureCollection', features:[{type:'Feature', properties:{}, geometry:{type:'Polygon', coordinates:[ring]}}]};
+    const a = fmtArea(geojsonAreaM2(gj));
+    const perim = geojsonLengthM({features:[{geometry:{type:'LineString', coordinates:ring}}]});
+    const pTxt = perim.toLocaleString('pt-BR',{maximumFractionDigits:1});
+    const pKm  = (perim/1000).toLocaleString('pt-BR',{maximumFractionDigits:3});
+    if(hint) hint.textContent = `Polígono FECHADO pelos ${ring.length-1} pontos ligados:`;
+    res.innerHTML = `
+      <div class="area-result-row"><span>Metros quadrados</span><b>${a.m2} m²</b></div>
+      <div class="area-result-row"><span>Quilômetros quadrados</span><b>${a.km2} km²</b></div>
+      <div class="area-result-row"><span>Hectares</span><b>${a.ha} ha</b></div>
+      <div class="area-result-row"><span>Perímetro</span><b>${pTxt} m (${pKm} km)</b></div>`;
+  } else {
+    const len = geojsonLengthM({features:[{geometry:{type:'LineString', coordinates: info.coords}}]});
+    const mTxt  = len.toLocaleString('pt-BR',{maximumFractionDigits:1});
+    const kmTxt = (len/1000).toLocaleString('pt-BR',{maximumFractionDigits:3});
+    if(hint) hint.textContent = `Linha ABERTA ligando ${info.coords.length} pontos (para medir a área, feche o polígono marcando por último um ponto com as mesmas coordenadas do primeiro):`;
+    res.innerHTML = `
+      <div class="area-result-row"><span>Comprimento (metros)</span><b>${mTxt} m</b></div>
+      <div class="area-result-row"><span>Comprimento (quilômetros)</span><b>${kmTxt} km</b></div>`;
+  }
+  try{
+    const latlngs = info.coords.map(c=>[c[1], c[0]]);
+    maps[key].fitBounds(L.latLngBounds(latlngs), {padding:[32,32]});
+  }catch(e){}
+}
+
+
+// ════════════════════════════════════════
 //  EXPORTAÇÃO UNIFICADA (menu com escolha de formato)
 // ════════════════════════════════════════
 function _exportDataFor(key){
@@ -3173,6 +3716,75 @@ document.addEventListener('click', e=>{
 // ════════════════════════════════════════
 let convCount=0, convData=[];
 
+
+// ── Normalização de números COLADOS nos campos E/N ──
+// Ao colar valores como "534.000", "9.350.000" ou "193.109,55", os separadores
+// de milhar são removidos e a vírgula decimal vira ponto — o usuário não
+// precisa conferir a formatação antes de colar.
+function normalizeNumStr(txt){
+  txt = String(txt||'').trim().replace(/\s+/g,'');
+  const hasDot = txt.includes('.'), hasComma = txt.includes(',');
+  if(hasDot && hasComma){
+    // pt-BR completo: pontos = milhar, vírgula = decimal
+    return txt.replace(/\./g,'').replace(',', '.');
+  }
+  if(hasComma){
+    const parts = txt.split(',');
+    // uma vírgula com 3 dígitos após = milhar; caso contrário = decimal
+    if(parts.length === 2 && parts[1].length !== 3) return parts.join('.');
+    return parts.join('');
+  }
+  if(hasDot){
+    const parts = txt.split('.');
+    // um ponto com 1-2 dígitos após = decimal (mantém); demais casos = milhar
+    if(parts.length === 2 && parts[1].length > 0 && parts[1].length <= 2) return txt;
+    return parts.join('');
+  }
+  return txt;
+}
+// Intercepta o "colar" nos campos E/N (Converter e Informar), em fase de
+// captura — funciona também nas linhas criadas dinamicamente.
+document.addEventListener('paste', function(e){
+  const t = e.target;
+  if(!t || t.tagName !== 'INPUT') return;
+  if(!/^(conv|inf)-(e|n)-\d+$/.test(t.id || '')) return;
+  const raw = (e.clipboardData || window.clipboardData).getData('text');
+  if(!raw) return;
+  e.preventDefault();
+  const clean = normalizeNumStr(raw);
+  t.value = clean;
+  t.dispatchEvent(new Event('input', {bubbles:true}));
+}, true);
+
+// ── Pré-preenchimento automático de novas entradas ──
+// Copia Fuso e Zona (letra) da PRIMEIRA entrada preenchida; para o Nome do
+// ponto (tela Informar), numera automaticamente a partir do nome da primeira
+// entrada (ex.: "p1" → "p2", "p3"; "Vistoria" → "Vistoria 2", "Vistoria 3").
+function prefillFromFirst(prefix, id, withName){
+  // localiza a primeira linha existente (a de menor índice ainda presente)
+  let firstId = null;
+  for(let i=1; i<id; i++){
+    if(document.getElementById(`${prefix}-z-${i}`)){ firstId = i; break; }
+  }
+  if(firstId === null) return; // esta é a primeira linha
+  const zEl = document.getElementById(`${prefix}-z-${firstId}`);
+  const lEl = document.getElementById(`${prefix}-l-${firstId}`);
+  if(zEl && zEl.value) document.getElementById(`${prefix}-z-${id}`).value = zEl.value;
+  if(lEl && lEl.value) document.getElementById(`${prefix}-l-${id}`).value = lEl.value;
+  if(withName){
+    const nmFirst = document.getElementById(`${prefix}-nm-${firstId}`);
+    const nmNew = document.getElementById(`${prefix}-nm-${id}`);
+    if(nmFirst && nmNew && nmFirst.value.trim()){
+      const base = nmFirst.value.trim();
+      // quantas linhas existem antes desta (para numerar em sequência)
+      let count = 0;
+      for(let i=1; i<id; i++) if(document.getElementById(`${prefix}-nm-${i}`)) count++;
+      const m = base.match(/^(.*?)(\d+)\s*$/);
+      nmNew.value = m ? (m[1] + (parseInt(m[2],10) + count)) : `${base} ${count+1}`;
+    }
+  }
+}
+
 function addConvRow(){
   convCount++;const id=convCount,div=document.createElement('div');
   div.className='coord-row';div.id=`conv-row-${id}`;
@@ -3184,10 +3796,11 @@ function addConvRow(){
     <div class="coord-field f-en"><label>Norte (N) - 7 dígitos</label><input type="number" step="0.01" placeholder="ex: 8251130.47" id="conv-n-${id}"></div>
     <button class="btn-rm" onclick="removeEl('conv-row-${id}')">✕</button>`;
   document.getElementById('conv-rows').appendChild(div);
+  prefillFromFirst('conv', id, false); // copia Fuso/Zona da 1ª entrada
 }
 
 function convConvert(){
-  convData=[];document.getElementById('conv-tbody').innerHTML='';let found=0;
+  convData=[];resetPointLink('conv');document.getElementById('conv-tbody').innerHTML='';let found=0;
   for(let i=1;i<=convCount;i++){
     const eEl=document.getElementById(`conv-e-${i}`);if(!eEl)continue;
     const E=parseFloat(eEl.value),N=parseFloat(document.getElementById(`conv-n-${i}`).value);
@@ -3197,7 +3810,7 @@ function convConvert(){
     const geo=utmToGeo(E,N,Z,L);if(!geo)continue;
     found++;convData.push({name:`Ponto ${found}`,lat:geo.lat,lon:geo.lon});
     const tr=document.createElement('tr');tr.dataset.idx=found-1;
-    tr.innerHTML=`<td>${found}</td><td><span class="zona-pill">${Z}${L}</span></td><td>${coordCell(geo.lat)}</td><td>${coordCell(geo.lon)}</td>`;
+    tr.innerHTML=`<td class="td-link"><input type="checkbox" class="pt-link-cb" title="Ligar este ponto" onclick="event.stopPropagation()" onchange="togglePointLink('conv',${found-1},this)"></td><td>${found}</td><td><span class="zona-pill">${Z}${L}</span></td><td>${coordCell(geo.lat)}</td><td>${coordCell(geo.lon)}</td>`;
     document.getElementById('conv-tbody').appendChild(tr);
   }
   if(!found){alert('Preencha pelo menos uma linha completa (Fuso, Zona, E, N)');return;}
@@ -3223,7 +3836,7 @@ function convConvert(){
 }
 function showConvInput(){document.getElementById('conv-split').style.display='none';document.getElementById('conv-input-panel').style.display='block';}
 function clearConverter(){
-  convCount=0;convData=[];
+  convCount=0;convData=[];resetPointLink('conv');
   document.getElementById('conv-rows').innerHTML='';document.getElementById('conv-tbody').innerHTML='';
   document.getElementById('conv-split').style.display='none';document.getElementById('conv-input-panel').style.display='block';
   clearMarkers('conv');
@@ -3314,7 +3927,7 @@ const IMG_EXT=/\.(jpe?g|tiff?|heic|heif|webp)$/i;
 async function handleExtFiles(files){
   const imgs=Array.from(files).filter(f=>IMG_EXT.test(f.name));
   if(!imgs.length){alert('Nenhuma imagem suportada encontrada.');return;}
-  extData=[];clearMarkers('ext');
+  extData=[];resetPointLink('ext');clearMarkers('ext');
   const pw=document.getElementById('ext-progress'),pf=document.getElementById('ext-fill'),pl=document.getElementById('ext-label');
   pw.style.display='block';let withGPS=0,withoutGPS=0;
   for(let i=0;i<imgs.length;i++){
@@ -3372,7 +3985,7 @@ function showExtResults(withGPS,withoutGPS){
     const tbody=document.getElementById('ext-tbody');tbody.innerHTML='';const bounds=[];
     extData.forEach((r,i)=>{
       const tr=document.createElement('tr');
-      tr.innerHTML=`<td>${i+1}</td><td class="fname-cell" title="${escHtml(r.name)}">${escHtml(r.name)}</td><td><span class="zona-pill" style="font-size:10px;padding:1px 5px">${escHtml(r.zona)}</span></td><td style="font-size:11px">${r.E.toLocaleString('pt-BR',{maximumFractionDigits:0})}</td><td style="font-size:11px">${r.N.toLocaleString('pt-BR',{maximumFractionDigits:0})}</td><td style="font-size:11px;text-align:right">${r.alt!==''?escHtml(r.alt)+'m':'—'}</td><td style="font-size:11px;white-space:nowrap">${escHtml(r.dtFmt)||'—'}</td>`;
+      tr.innerHTML=`<td class="td-link"><input type="checkbox" class="pt-link-cb" title="Ligar este ponto" onclick="event.stopPropagation()" onchange="togglePointLink('ext',${i},this)"></td><td>${i+1}</td><td class="fname-cell" title="${escHtml(r.name)}">${escHtml(r.name)}</td><td><span class="zona-pill" style="font-size:10px;padding:1px 5px">${escHtml(r.zona)}</span></td><td style="font-size:11px">${r.E.toLocaleString('pt-BR',{maximumFractionDigits:0})}</td><td style="font-size:11px">${r.N.toLocaleString('pt-BR',{maximumFractionDigits:0})}</td><td style="font-size:11px;text-align:right">${r.alt!==''?escHtml(r.alt)+'m':'—'}</td><td style="font-size:11px;white-space:nowrap">${escHtml(r.dtFmt)||'—'}</td>`;
       tr.addEventListener('click',()=>{
         document.querySelectorAll('#ext-tbody tr').forEach(t=>t.classList.remove('selected'));
         tr.classList.add('selected');
@@ -3385,7 +3998,7 @@ function showExtResults(withGPS,withoutGPS){
   },300);
 }
 function clearExtrair(){
-  extData=[];clearMarkers('ext');
+  extData=[];resetPointLink('ext');clearMarkers('ext');
   clearUploadedLayers('ext');
   if(typeof clearMeasure==='function') clearMeasure('ext');
   document.getElementById('ext-upload-panel').style.display='block';
@@ -3411,9 +4024,10 @@ function addInfRow(){
     <div class="coord-field f-en"><label>Norte (N) - 7 dígitos</label><input type="number" step="0.01" placeholder="ex: 8251130.47" id="inf-n-${id}"></div>
     <button class="btn-rm" onclick="removeEl('inf-row-${id}')">✕</button>`;
   document.getElementById('inf-rows').appendChild(div);
+  prefillFromFirst('inf', id, true); // copia Fuso/Zona e numera o Nome
 }
 function saveInformar(){
-  infData=[];document.getElementById('inf-tbody').innerHTML='';let found=0;
+  infData=[];resetPointLink('inf');document.getElementById('inf-tbody').innerHTML='';let found=0;
   for(let i=1;i<=infCount;i++){
     const eEl=document.getElementById(`inf-e-${i}`);if(!eEl)continue;
     const E=parseFloat(eEl.value),N=parseFloat(document.getElementById(`inf-n-${i}`).value);
@@ -3424,7 +4038,7 @@ function saveInformar(){
     const geo=utmToGeo(E,N,Z,L);if(!geo)continue;
     found++;infData.push({name:nm,lat:geo.lat,lon:geo.lon});
     const tr=document.createElement('tr');tr.dataset.idx=found-1;
-    tr.innerHTML=`<td>${found}</td><td>${escHtml(nm)}</td><td><span class="zona-pill">${escHtml(Z)}${escHtml(L)}</span></td><td style="font-size:11px">${E.toLocaleString('pt-BR',{maximumFractionDigits:1})}</td><td style="font-size:11px">${N.toLocaleString('pt-BR',{maximumFractionDigits:1})}</td>`;
+    tr.innerHTML=`<td class="td-link"><input type="checkbox" class="pt-link-cb" title="Ligar este ponto" onclick="event.stopPropagation()" onchange="togglePointLink('inf',${found-1},this)"></td><td>${found}</td><td>${escHtml(nm)}</td><td><span class="zona-pill">${escHtml(Z)}${escHtml(L)}</span></td><td style="font-size:11px">${E.toLocaleString('pt-BR',{maximumFractionDigits:1})}</td><td style="font-size:11px">${N.toLocaleString('pt-BR',{maximumFractionDigits:1})}</td>`;
     document.getElementById('inf-tbody').appendChild(tr);
   }
   if(!found){alert('Preencha pelo menos um ponto completo (Zona, Letra, E, N).');return;}
@@ -3469,7 +4083,7 @@ function updateInfDownloadButtons(){
   if(div) div.style.display = has ? '' : 'none';
 }
 function clearInformar(){
-  infCount=0;infData=[];
+  infCount=0;infData=[];resetPointLink('inf');
   document.getElementById('inf-rows').innerHTML='';document.getElementById('inf-tbody').innerHTML='';
   document.getElementById('inf-split').style.display='none';document.getElementById('inf-input-panel').style.display='block';
   clearMarkers('inf');
