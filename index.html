@@ -24,7 +24,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@5.8.1/dist/togeojson.umd.js"></script>
 
 <!-- Folha de estilos do aplicativo -->
-<link rel="stylesheet" href="css/styles.css?v=20260711185444">
+<link rel="stylesheet" href="css/styles.css?v=20260715200048">
 </head>
 <body>
 <a href="#main-content" class="skip-link">Pular para o conteúdo principal</a>
@@ -118,7 +118,7 @@
           <li><strong>Entrada em lote:</strong> adicione quantos pontos quiser e converta todos de uma vez — novas entradas já vêm com Fuso/Zona pré-preenchidos a partir da primeira, e valores colados com pontos/vírgulas de milhar são normalizados automaticamente.</li>
           <li><strong>Visualização no mapa:</strong> os pontos aparecem sobre dezenas de camadas oficiais (IPHAN, IBGE, FUNAI, ICMBio, DNIT, SNIF, ANA, VALEC, Marinha e outras).</li>
           <li><strong>Copiar coordenadas:</strong> cada latitude e longitude convertida tem um botão de cópia individual (⧉) ao lado do valor, pronto para colar no SICG.</li>
-          <li><strong>Importar arquivo geoespacial:</strong> sobreponha KML, KMZ, GeoJSON, GPX, GTM (GPS TrackMaker) ou Shapefile (.zip —  inclusive contendo qualquer arquivo geoespacial válido — ou pasta) para conferência visual.</li>
+          <li><strong>Importar arquivo geoespacial:</strong> sobreponha KML, KMZ, GeoJSON, GPX, GTM (GPS TrackMaker), CSV (com colunas de coordenadas) ou Shapefile (.zip —  inclusive contendo qualquer arquivo geoespacial válido — ou pasta) para conferência visual.</li>
           <li><strong>Ferramentas do mapa:</strong> meça distâncias, calcule a área de polígonos e o comprimento de linhas importadas pelos botões do rodapé; use a coluna 🔗 da tabela para ligar pontos e visualizar (e medir) a linha ou o polígono formado; em zoom aproximado, consulte o histórico de imagens de satélite (Esri Wayback).</li>
           <li><strong>Exportação:</strong> botão único <strong>Exportar</strong> com escolha de formato — KML (Google Earth), Shapefile .zip (QGIS) ou GeoJSON.</li>
         </ul>
@@ -144,7 +144,7 @@
         <div class="export-menu" id="exportmenu-conv"></div>
       </div>
       <div class="btn-divider"></div>
-      <button type="button" class="btn btn-upload btn-sm" title="Importar KML, KMZ, GeoJSON, GPX, GTM (GPS TrackMaker) ou Shapefile compactado (.zip) para visualizar no mapa" onclick="triggerGeoUpload('conv','file')">⬆ Importar arquivo geoespacial</button>
+      <button type="button" class="btn btn-upload btn-sm" title="Importar KML, KMZ, GeoJSON, GPX, GTM (GPS TrackMaker), CSV (com coordenadas) ou Shapefile compactado (.zip) para visualizar no mapa" onclick="triggerGeoUpload('conv','file')">⬆ Importar arquivo geoespacial</button>
       <button type="button" class="btn btn-upload btn-sm" title="Selecionar a pasta com os componentes do Shapefile (.shp, .shx, .dbf, .prj)" onclick="triggerGeoUpload('conv','folder')">⬆ Importar Shapefile (pasta)</button>
       <button type="button" class="btn btn-sm" title="Limpar tudo: pontos, tabela, camadas importadas e medições" onclick="clearConverter()">🗑 Limpar</button>
     </div>
@@ -206,7 +206,7 @@
           <li><strong>Envio individual ou em lote:</strong> selecione várias fotos ou uma pasta inteira (incluindo subpastas).</li>
           <li><strong>Conversão automática:</strong> as coordenadas são convertidas para <strong>UTM/SIRGAS2000</strong> e plotadas no mapa.</li>
           <li><strong>Tabela detalhada:</strong> o painel esquerdo lista nome do arquivo, coordenadas, altitude e data/hora de cada foto.</li>
-          <li><strong>Importar e medir:</strong> sobreponha arquivos geoespaciais (KML/KMZ/GeoJSON/GPX/Shapefile), meça distâncias e calcule áreas no próprio mapa; a coluna 🔗 da tabela liga pontos das fotos para visualizar e medir a linha ou o polígono formado.</li>
+          <li><strong>Importar e medir:</strong> sobreponha arquivos geoespaciais (KML/KMZ/GeoJSON/GPX/CSV/Shapefile), meça distâncias e calcule áreas no próprio mapa; a coluna 🔗 da tabela liga pontos das fotos para visualizar e medir a linha ou o polígono formado.</li>
           <li><strong>Exportação:</strong> botão único <strong>Exportar</strong> com escolha de formato — KML, Shapefile .zip ou GeoJSON.</li>
         </ul>
         <span class="info-note">Formatos aceitos: JPG, JPEG, TIFF, HEIC, HEIF e WEBP. Fotos sem GPS são identificadas e contabilizadas à parte. Todo o processamento ocorre no seu navegador — nenhuma foto é enviada a servidores.</span>
@@ -241,7 +241,7 @@
         <div class="export-menu" id="exportmenu-ext"></div>
       </div>
       <div class="btn-divider"></div>
-      <button type="button" class="btn btn-upload btn-sm" title="Importar KML, KMZ, GeoJSON, GPX, GTM (GPS TrackMaker) ou Shapefile compactado (.zip) para visualizar no mapa" onclick="triggerGeoUpload('ext','file')">⬆ Importar arquivo geoespacial</button>
+      <button type="button" class="btn btn-upload btn-sm" title="Importar KML, KMZ, GeoJSON, GPX, GTM (GPS TrackMaker), CSV (com coordenadas) ou Shapefile compactado (.zip) para visualizar no mapa" onclick="triggerGeoUpload('ext','file')">⬆ Importar arquivo geoespacial</button>
       <button type="button" class="btn btn-upload btn-sm" title="Selecionar a pasta com os componentes do Shapefile (.shp, .shx, .dbf, .prj)" onclick="triggerGeoUpload('ext','folder')">⬆ Importar Shapefile (pasta)</button>
       <button type="button" class="btn btn-sm" title="Recomeçar: limpa fotos, tabela, camadas importadas e medições" onclick="clearExtrair()">🔄 Nova seleção</button>
     </div>
@@ -317,7 +317,7 @@
         <button type="button" class="btn btn-primary" onclick="saveInformar()">💾 Salvar e visualizar no mapa</button>
         <span class="or-divider">ou</span>
         <span class="import-group-label">Importar arquivo:</span>
-        <button type="button" class="btn btn-upload btn-sm" title="Importar KML, KMZ, GeoJSON, GPX, GTM (GPS TrackMaker) ou Shapefile compactado (.zip) para visualizar no mapa" onclick="triggerGeoUpload('inf','file')">⬆ Geoespacial</button>
+        <button type="button" class="btn btn-upload btn-sm" title="Importar KML, KMZ, GeoJSON, GPX, GTM (GPS TrackMaker), CSV (com coordenadas) ou Shapefile compactado (.zip) para visualizar no mapa" onclick="triggerGeoUpload('inf','file')">⬆ Geoespacial</button>
         <button type="button" class="btn btn-upload btn-sm" title="Selecionar a pasta com os componentes do Shapefile (.shp, .shx, .dbf, .prj)" onclick="triggerGeoUpload('inf','folder')">⬆ Shapefile (pasta)</button>
       </div>
     </div>
@@ -334,7 +334,7 @@
         <div class="export-menu" id="exportmenu-inf"></div>
       </div>
       <div class="btn-divider" id="inf-dl-divider"></div>
-      <button type="button" class="btn btn-upload btn-sm" title="Importar KML, KMZ, GeoJSON, GPX, GTM (GPS TrackMaker) ou Shapefile compactado (.zip) para visualizar no mapa" onclick="triggerGeoUpload('inf','file')">⬆ Importar arquivo geoespacial</button>
+      <button type="button" class="btn btn-upload btn-sm" title="Importar KML, KMZ, GeoJSON, GPX, GTM (GPS TrackMaker), CSV (com coordenadas) ou Shapefile compactado (.zip) para visualizar no mapa" onclick="triggerGeoUpload('inf','file')">⬆ Importar arquivo geoespacial</button>
       <button type="button" class="btn btn-upload btn-sm" title="Selecionar a pasta com os componentes do Shapefile (.shp, .shx, .dbf, .prj)" onclick="triggerGeoUpload('inf','folder')">⬆ Importar Shapefile (pasta)</button>
       <button type="button" class="btn btn-sm" title="Limpar tudo: pontos, tabela, camadas importadas e medições" onclick="clearInformar()">🗑 Limpar</button>
     </div>
@@ -379,6 +379,6 @@
 
 </main>
 
-<script src="js/app.js?v=20260711185444"></script>
+<script src="js/app.js?v=20260715200048"></script>
 </body>
 </html>
