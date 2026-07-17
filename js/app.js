@@ -291,7 +291,7 @@ function buildMap(divId, key) {
         <td style="font-weight:500;padding:3px 0;font-size:12px">${v!==undefined&&v!==null&&v!==''?escHtml(v):'—'}</td>
       </tr>`
     ).join('');
-    L.popup({maxWidth:360, minWidth:300, className:'rich-popup', closeButton:true, autoClose:true})
+    L.popup({maxWidth:360, className:'rich-popup', closeButton:true, autoClose:true})
       .setLatLng(latlng)
       .setContent(`<div style="min-width:200px">
         <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;
@@ -527,8 +527,6 @@ function buildMap(divId, key) {
     {nome:'IPHAN - Bens Materiais (SICG)',url:'https://geoserver.iphan.gov.br/geoserver/SICG/wms', layer:'SICG:tg_bem_classificacao', tipo:'ponto', corsBlocked:true, wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/SICG/ows', typeName:'SICG:tg_bem_classificacao'}},
     {nome:'IPHAN - Bens Imateriais (SICG)',   url:'https://geoserver.iphan.gov.br/geoserver/SICG/wms', layer:'SICG:tg_bem_imaterial', tipo:'ponto', corsBlocked:true, wfsFallback:{url:'https://geoserver.iphan.gov.br/geoserver/SICG/ows', typeName:'SICG:tg_bem_imaterial'}},
     {nome:'ANA - Hidrografia (SNIRH)',                  url:'https://www.snirh.gov.br/arcgis/services/INDE/Camadas/MapServer/WMSServer', layer:'106', clickTolerance:8, dpi:180, noJsonp:true, tipo:'linear'},
-    {nome:'ANM - Mineração (Dados consolidados)',       url:'https://geo.anm.gov.br/arcgis/services/SIGMINE/dados_anm/MapServer/WMSServer', layer:'0,1,2,3,4', tipo:'poligono', corsBlocked:true, noJsonp:true, htmlOnly:true, version:'1.1.1', gfiSrs:'EPSG:4326', arcgisRest:'https://geo.anm.gov.br/arcgis/rest/services/SIGMINE/dados_anm/MapServer', arcgisLayers:'0,1,2,3,4', clickTolerance:5},
-    {nome:'ANEEL - Energia (SIGEL)',                     url:'https://sigel.aneel.gov.br/arcgis/services/PORTAL/WFS/MapServer/WMSServer', layer:'1,2,3,6,7,8,9,10,12,13,14,15', tipo:'misto', corsBlocked:true, noJsonp:true, htmlOnly:true, version:'1.1.1', gfiSrs:'EPSG:4326', clickTolerance:6, arcgisRest:'https://sigel.aneel.gov.br/arcgis/rest/services/PORTAL/WFS/MapServer', arcgisLayers:'0,1,2,3,5,6,7,8,9,12,13,14', excludeNames:'atua\u00e7\u00e3o das distribuidoras|distribuidora por|reservat\u00f3rio na', layerNames:{0:'Aerogeradores',1:'Central Geradora E\u00f3lica',2:'Central Geradora Solar Fotovoltaica',3:'Usina Termel\u00e9trica',5:'Usina Termonuclear',6:'Central Geradora Hidrel\u00e9trica',7:'Pequena Central Hidrel\u00e9trica',8:'Usina Hidrel\u00e9trica',9:'Linha de Transmiss\u00e3o de EOL',12:'Parque E\u00f3lico',13:'Arranjo Geral da AHE',14:'Declara\u00e7\u00e3o de Utilidade P\u00fablica'}},
     {nome:'IBGE - Hidrografia',               url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CCAR:BC250_2025_hid', tipo:'linear'},
     {nome:'IBGE - Localidades Indígenas (Censo 2022)',      url:'https://geoservicoscenso2022.ibge.gov.br/geoserver/censo2022/ows', layer:'cete_BR_LIs_CD2022_02062025', tipo:'poligono'},
     {nome:'IBGE - Locais de Concentração de Pessoas Indígenas (Censo 2022)',url:'https://geoservicoscenso2022.ibge.gov.br/geoserver/censo2022/ows', layer:'cete_BR_LCPIs_CD2022_02062025', tipo:'ponto'},
@@ -538,7 +536,7 @@ function buildMap(divId, key) {
     {nome:'IBGE - Geomorfologia (Linear)',    url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:Geomorfologia_simbLinear_Brasil', tipo:'linear'},        
     {nome:'IBGE - Trecho Ferroviário',        url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CCAR:BC250_2025_fer_trecho_ferroviario_l', tipo:'linear'},
     {nome:'IBGE - Curvas de Nível',           url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CCAR:BCIM_Curva_Nivel_L', tipo:'linear'},    
-    {nome:'Exército Brasileiro - Curvas de Nível', tipo:'ponto', url:'https://bdgex.eb.mil.br/mapcache3857', layer:[
+    {nome:'EB/DSG - Curvas de Nível', tipo:'ponto', url:'https://bdgex.eb.mil.br/mapcache3857', layer:[
       'curva_nivel25','curva_nivel50','curva_nivel100','curva_nivel250',
     ].join(',')},
     {nome:'VALEC - Trecho Ferroviário', url:'https://geoservicos.inde.gov.br/geoserver/VALEC/ows', layer:'trecho_ferroviario_infrasa', tipo:'linear'},
@@ -560,15 +558,17 @@ function buildMap(divId, key) {
       'DPHDM:fernando_de_noronha_naufragios','DPHDM:ar_naufragios','DPHDM:ilha_da_trindade_naufragios',
       'DPHDM:rs_principal_shp',
     ].join(',')},
+    {nome:'ANM - Mineração (SIGMINE)', url:'https://geo.anm.gov.br/arcgis/services/SIGMINE/dados_anm/MapServer/WMSServer', layer:'0,1,2,3,4', tipo:'poligono', corsBlocked:true, noJsonp:true, htmlOnly:true, version:'1.1.1', gfiSrs:'EPSG:4326', arcgisRest:'https://geo.anm.gov.br/arcgis/rest/services/SIGMINE/dados_anm/MapServer', arcgisLayers:'0,1,2,3,4', clickTolerance:5},
+    {nome:'ANEEL - Energia (SIGEL)',   url:'https://sigel.aneel.gov.br/arcgis/services/PORTAL/WFS/MapServer/WMSServer', layer:'1,2,3,6,7,8,9,10,12,13,14,15', tipo:'misto', corsBlocked:true, noJsonp:true, htmlOnly:true, version:'1.1.1', gfiSrs:'EPSG:4326', clickTolerance:6, arcgisRest:'https://sigel.aneel.gov.br/arcgis/rest/services/PORTAL/WFS/MapServer', arcgisLayers:'0,1,2,3,5,6,7,8,9,12,13,14', excludeNames:'atua\u00e7\u00e3o das distribuidoras|distribuidora por|reservat\u00f3rio na', layerNames:{0:'Aerogeradores',1:'Central Geradora E\u00f3lica',2:'Central Geradora Solar Fotovoltaica',3:'Usina Termel\u00e9trica',5:'Usina Termonuclear',6:'Central Geradora Hidrel\u00e9trica',7:'Pequena Central Hidrel\u00e9trica',8:'Usina Hidrel\u00e9trica',9:'Linha de Transmiss\u00e3o de EOL',12:'Parque E\u00f3lico',13:'Arranjo Geral da AHE',14:'Declara\u00e7\u00e3o de Utilidade P\u00fablica'}},
   ];
   // Camadas que devem ficar em segundo plano (renderizadas "abaixo" das
   // demais camadas quando ativas simultaneamente). São polígonos preenchidos
   // normais (não em modo circunscrito).
   const WMS_LAYERS_BACKGROUND = [
-    {nome:'Exército Brasileiro - Modelo Digital de Superfície (MDS)', tipo:'poligono', url:'https://bdgex.eb.mil.br/mapcache3857', layer:[
+    {nome:'EB/DSG - Modelo Digital de Superfície (MDS)', tipo:'poligono', url:'https://bdgex.eb.mil.br/mapcache3857', layer:[
       'mds25','mds50','mds250',
     ].join(',')},
-    {nome:'Exército Brasileiro - Cartas Topográficas (CTM)', tipo:'poligono', url:'https://bdgex.eb.mil.br/mapcache3857', layer:[
+    {nome:'EB/DSG - Cartas Topográficas (CTM)', tipo:'poligono', url:'https://bdgex.eb.mil.br/mapcache3857', layer:[
       'ctm25','ctm50','ctm100','ctm250',
     ].join(',')},
     {nome:'IBGE - Hipsometria 2022', url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CGEO:andb2022_021801', tipo:'poligono'},          
@@ -679,7 +679,7 @@ function buildMap(divId, key) {
 
   // ── Controle de camadas ──
   const layersControl = L.control.layers(
-    { 'OpenStreetMap': osm, 'Satélite (ESRI)': sat, 'OpenTopoMap': topo, 'World Hillshade (Esri)': hillshade, 'Vetorial puro': blank },
+    { 'OpenStreetMap': osm, 'Satélite (Esri)': sat, 'OpenTopoMap': topo, 'World Hillshade (Esri)': hillshade, 'Vetorial puro': blank },
     {
       'Limites Estaduais': estadoGroup,
       'Limites Municipais': munGroup,
@@ -1407,7 +1407,7 @@ function buildMap(divId, key) {
   function updateWaybackButton(){
     const btn = document.getElementById('waybackBtn-'+key);
     if(!btn) return;
-    // Duas condições: escala grande (zoom alto) E camada base Satélite (ESRI)
+    // Duas condições: escala grande (zoom alto) E camada base Satélite (Esri)
     // ativa — o histórico do Wayback refere-se à imagem Esri World Imagery.
     const satActive = m.hasLayer(sat);
     btn.style.display = (satActive && m.getZoom() >= WAYBACK_MIN_ZOOM) ? '' : 'none';
@@ -2173,6 +2173,8 @@ function clearUploadedLayers(key){
   });
   uploadedLayers[key] = [];
   uploadedColorIdx[key] = 0;
+  csvImportedPoints[key] = {};
+  if(key==='inf' && typeof updateInfDownloadButtons==='function') updateInfDownloadButtons();
   // Limpa a lista visual e oculta o painel de camadas importadas
   const list = document.getElementById('geolist-'+key);
   if(list) list.innerHTML = '';
@@ -2444,6 +2446,12 @@ function addGeoLayerToPanel(key, name, layer, color, map, ulc, geojson){
       const rep = findTrackReport(name);
       if(rep && _trackReports[rep.fileName]) delete _trackReports[rep.fileName];
     }catch(e){}
+    // Remove os pontos CSV associados a esta camada (se houver) e atualiza o
+    // botão Exportar da tela Informar
+    try{
+      if(csvImportedPoints[key] && csvImportedPoints[key][name]) delete csvImportedPoints[key][name];
+      if(key==='inf' && typeof updateInfDownloadButtons==='function') updateInfDownloadButtons();
+    }catch(e){}
     if(!uploadedLayers[key].length){
       panel.classList.remove('show');
       if(ulc){
@@ -2504,7 +2512,7 @@ function updateAreaButton(key){
 function bindGeoFeaturePopup(layer, feature, key){
   const props = feature.properties || {};
   const rows = Object.entries(props).slice(0,8).map(([k,v])=>
-    `<tr><td style="color:var(--muted);padding:3px 10px 3px 0;font-size:12px;white-space:nowrap;vertical-align:top">${escHtml(k)}</td><td style="font-weight:500;padding:3px 0;font-size:12px">${v!==undefined&&v!==null?escHtml(v):'—'}</td></tr>`
+    `<tr><td style="color:var(--muted);padding:3px 10px 3px 0;font-size:12px;overflow-wrap:anywhere;word-break:break-word;vertical-align:top">${escHtml(k)}</td><td style="font-weight:500;padding:3px 0;font-size:12px;overflow-wrap:anywhere;word-break:break-word">${v!==undefined&&v!==null?escHtml(v):'—'}</td></tr>`
   ).join('');
   const titulo = escHtml(props.name || props.Name || props.NAME || 'Feição');
   // Ícone da tipologia da feição clicada (ponto/linha/polígono)
@@ -2515,13 +2523,13 @@ function bindGeoFeaturePopup(layer, feature, key){
   const typeLbl  = (gt==='Point'||gt==='MultiPoint') ? 'Ponto'
                  : (gt==='LineString'||gt==='MultiLineString') ? 'Linha'
                  : (gt==='Polygon'||gt==='MultiPolygon') ? 'Polígono' : '';
-  layer.bindPopup(`<div style="min-width:180px">
-      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px">
+  layer.bindPopup(`<div style="min-width:200px">
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:6px">
         <span title="${typeLbl}" style="flex-shrink:0">${typeIcon}</span>
-        <span>${titulo}</span>
+        <span style="overflow-wrap:anywhere;word-break:break-word">${titulo}</span>
       </div>
-      <table style="border-collapse:collapse;width:100%">${rows || '<tr><td style="font-size:12px;color:var(--muted)">Sem atributos</td></tr>'}</table>
-    </div>`, {maxWidth:280, className:'rich-popup'});
+      <table style="border-collapse:collapse;width:100%;table-layout:fixed"><colgroup><col style="width:42%"><col style="width:58%"></colgroup>${rows || '<tr><td style="font-size:12px;color:var(--muted)">Sem atributos</td></tr>'}</table>
+    </div>`, {maxWidth:320, className:'rich-popup'});
   // O clique é tratado de forma centralizada pelo handler do mapa
   // (clickHitsUploadedLayer), que aplica prioridade ponto > linha > polígono.
   // Não vinculamos um handler de clique por feição para evitar concorrência
@@ -3062,12 +3070,13 @@ async function importCsvFile(key, file, map, layersControl){
   const headers = parseLine(lines[0]).map(h=>h.toLowerCase());
   const idx = pred => headers.findIndex(pred);
 
-  // Identifica colunas de coordenadas
+  // Identifica colunas de coordenadas (nomes flexíveis, inclusive os gerados
+  // pela própria exportação do CheckLic: utm_easting, utm_northing, zona_utm)
   const iLat = idx(h=>/^(lat|latitude|lat_dd|y)$/.test(h) || /latitude/.test(h));
   const iLon = idx(h=>/^(lon|lng|long|longitude|lon_dd|x)$/.test(h) || /longitude/.test(h));
-  const iE   = idx(h=>/^(e|este|easting|coord_e|utm_e|leste)$/.test(h) || /^este\b/.test(h));
-  const iN   = idx(h=>/^(n|norte|northing|coord_n|utm_n)$/.test(h) || /^norte\b/.test(h));
-  const iZona= idx(h=>/^(fuso|zona|zone|utm_zone|fuso_utm)$/.test(h));
+  const iE   = idx(h=>/^(e|este)$/.test(h) || /easting|utm_e|coord_e|(^|[^a-z])este([^a-z]|$)|leste/.test(h));
+  const iN   = idx(h=>/^(n|norte)$/.test(h) || /northing|utm_n|coord_n|(^|[^a-z])norte([^a-z]|$)/.test(h));
+  const iZona= idx(h=>/fuso|zona|zone/.test(h));
   const iLet = idx(h=>/^(letra|letter|hemisferio|hemisfério|hem|banda)$/.test(h));
   const iName= idx(h=>/^(nome|name|ponto|id|codigo|c[óo]digo|descri[cç][ãa]o|label|titulo|t[íi]tulo)$/.test(h));
 
@@ -3101,8 +3110,12 @@ async function importCsvFile(key, file, map, layersControl){
       if(lat===null || lon===null || Math.abs(lat)>90 || Math.abs(lon)>180){ skipped++; continue; }
     } else {
       const E = numUtm(cells[iE]), N = numUtm(cells[iN]);
-      const zona = parseInt(normalizeNumStr(cells[iZona]), 10);
-      const letra = iLet>=0 && cells[iLet] ? cells[iLet].trim().toUpperCase().charAt(0) : 'M';
+      // A zona pode vir combinada com a letra (ex.: "23K") ou separada
+      const zonaRaw = String(cells[iZona]||'').trim();
+      const zm = zonaRaw.match(/(\d{1,2})\s*([A-Za-z])?/);
+      const zona = zm ? parseInt(zm[1],10) : NaN;
+      const letra = (iLet>=0 && cells[iLet]) ? cells[iLet].trim().toUpperCase().charAt(0)
+                  : (zm && zm[2]) ? zm[2].toUpperCase() : 'M';
       if(E===null || N===null || !isFinite(zona) || zona<1 || zona>60 ||
          E < 100000 || E > 900000 || N < 0 || N > 10000000){ skipped++; continue; }
       const geo = utmToGeo(E, N, zona, letra);
@@ -3130,6 +3143,14 @@ async function importCsvFile(key, file, map, layersControl){
   }
   const geojson = { type:'FeatureCollection', features };
   addGeoJSONToMap(key, geojson, file.name, map, layersControl);
+  // Registra os pontos para EXPORTAÇÃO (KML/Shapefile/GeoJSON) e habilita o
+  // botão Exportar (na tela Informar, que é controlada por visibilidade).
+  csvImportedPoints[key][file.name] = features.map(f=>({
+    name: f.properties.name,
+    lat: f.geometry.coordinates[1],
+    lon: f.geometry.coordinates[0],
+  }));
+  if(key==='inf' && typeof updateInfDownloadButtons==='function') updateInfDownloadButtons();
 }
 
 // Lê um arquivo KML ou KMZ e adiciona ao mapa.
@@ -3780,11 +3801,18 @@ function selectLinkedFeature(key){
 // ════════════════════════════════════════
 //  EXPORTAÇÃO UNIFICADA (menu com escolha de formato)
 // ════════════════════════════════════════
+// Pontos vindos de arquivos CSV importados (por tela e por arquivo), para
+// que também possam ser EXPORTADOS (KML/Shapefile/GeoJSON) junto com os
+// pontos das tabelas.
+const csvImportedPoints = {conv:{}, ext:{}, inf:{}};
+function _csvPointsFor(key){
+  const byFile = csvImportedPoints[key] || {};
+  return Object.values(byFile).flat();
+}
 function _exportDataFor(key){
-  if(key==='conv') return convData;
-  if(key==='ext')  return extData;
-  if(key==='inf')  return infData;
-  return [];
+  const table = key==='conv' ? convData : key==='ext' ? extData : key==='inf' ? infData : [];
+  const csv = _csvPointsFor(key);
+  return csv.length ? [...table, ...csv] : table;
 }
 function toggleExportMenu(ev, key, fname){
   ev.stopPropagation();
@@ -4195,7 +4223,7 @@ function showInfInput(){
 // informados manualmente. Ao apenas importar arquivos geoespaciais para
 // visualização, esses botões ficam ocultos (não há o que baixar).
 function updateInfDownloadButtons(){
-  const has = Array.isArray(infData) && infData.length > 0;
+  const has = (Array.isArray(infData) && infData.length > 0) || _csvPointsFor('inf').length > 0;
   const exp = document.getElementById('inf-dl-kml'); // wrapper do botão Exportar
   const div = document.getElementById('inf-dl-divider');
   if(exp) exp.style.display = has ? '' : 'none';
