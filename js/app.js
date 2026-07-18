@@ -287,8 +287,8 @@ function buildMap(divId, key) {
     campos = (campos || []).filter(([k]) => k === 'Camada' || !isTech(k));
     const rows = campos.map(([k,v]) =>
       `<tr>
-        <td style="color:var(--muted);padding:3px 10px 3px 0;font-size:12px;white-space:nowrap;vertical-align:top">${escHtml(k)}</td>
-        <td style="font-weight:500;padding:3px 0;font-size:12px">${v!==undefined&&v!==null&&v!==''?escHtml(v):'—'}</td>
+        <td style="color:var(--muted);padding:3px 10px 3px 0;font-size:12px;overflow-wrap:anywhere;word-break:break-word;max-width:170px;vertical-align:top">${escHtml(k)}</td>
+        <td style="font-weight:500;padding:3px 0;font-size:12px;overflow-wrap:anywhere;word-break:break-word">${v!==undefined&&v!==null&&v!==''?escHtml(v):'—'}</td>
       </tr>`
     ).join('');
     L.popup({maxWidth:360, className:'rich-popup', closeButton:true, autoClose:true})
@@ -2555,7 +2555,45 @@ function setGeoLayerColor(layer, color){
   });
 }
 
+// Normaliza GeometryCollections em tipos Multi* homogêneos. KMLs com
+// <MultiGeometry> de vários polígonos (ex.: ADAs multipartes exportadas pelo
+// QGIS/ArcGIS) viram "GeometryCollection" na conversão para GeoJSON — um tipo
+// que o restante do sistema (ícone de tipologia, Área e comprimento, buffer
+// AID × ADA) não reconhece. Aqui cada feição desse tipo é convertida em uma ou
+// mais feições homogêneas (MultiPolygon / MultiLineString / MultiPoint),
+// preservando as propriedades.
+function normalizeGeometryCollections(geojson){
+  if(!geojson || !Array.isArray(geojson.features)) return geojson;
+  const out = [];
+  const flatten = (g, acc) => { // coleta geometrias simples, recursivamente
+    if(!g) return;
+    if(g.type === 'GeometryCollection') (g.geometries||[]).forEach(sub=>flatten(sub, acc));
+    else acc.push(g);
+  };
+  geojson.features.forEach(f=>{
+    const g = f.geometry;
+    if(!g || g.type !== 'GeometryCollection'){ out.push(f); return; }
+    const geoms = []; flatten(g, geoms);
+    const polys = [], lines = [], points = [];
+    geoms.forEach(s=>{
+      if(s.type==='Polygon') polys.push(s.coordinates);
+      else if(s.type==='MultiPolygon') s.coordinates.forEach(c=>polys.push(c));
+      else if(s.type==='LineString') lines.push(s.coordinates);
+      else if(s.type==='MultiLineString') s.coordinates.forEach(c=>lines.push(c));
+      else if(s.type==='Point') points.push(s.coordinates);
+      else if(s.type==='MultiPoint') s.coordinates.forEach(c=>points.push(c));
+    });
+    if(polys.length)  out.push({...f, geometry:{type:'MultiPolygon',    coordinates:polys}});
+    if(lines.length)  out.push({...f, geometry:{type:'MultiLineString', coordinates:lines}});
+    if(points.length) out.push({...f, geometry:{type:'MultiPoint',      coordinates:points}});
+    if(!polys.length && !lines.length && !points.length) out.push(f); // vazia: mantém
+  });
+  geojson.features = out;
+  return geojson;
+}
+
 function addGeoJSONToMap(key, geojson, name, map, layersControl){
+  geojson = normalizeGeometryCollections(geojson);
   const color = nextColor(key);
   // Determina a tipologia predominante da coleção para escolher o pane
   // (prioridade de clique: ponto > linha > polígono).
