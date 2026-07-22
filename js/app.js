@@ -245,7 +245,19 @@ function buildMap(divId, key) {
   const munGroup       = L.layerGroup();
   const topoGroup      = L.layerGroup();
 
-  // Cores configuráveis pelo usuário para as camadas padrão (persistidas)
+  // Cores configuráveis pelo usuário para as camadas padrão (persistidas).
+  // As escolhas ficam salvas no navegador (localStorage) e têm precedência
+  // sobre os padrões abaixo. A chave de versão força UMA redefinição para os
+  // padrões atuais (laranja/azul) em navegadores que guardaram cores antigas
+  // de sessões anteriores; depois disso, as personalizações voltam a persistir
+  // normalmente.
+  const LAYER_COLORS_VERSION = '2';
+  try{
+    if(localStorage.getItem('geotools-layer-colors-v') !== LAYER_COLORS_VERSION){
+      localStorage.removeItem('geotools-layer-colors');
+      localStorage.setItem('geotools-layer-colors-v', LAYER_COLORS_VERSION);
+    }
+  }catch(e){ /* localStorage indisponível: segue com os padrões */ }
   const layerColors = JSON.parse(localStorage.getItem('geotools-layer-colors')||'{}');
   const LAYER_COLOR_DEFAULTS = { estado:'#f0a050', municipio:'#5b8af0' };
   function getLayerColor(name){ return layerColors[name] || LAYER_COLOR_DEFAULTS[name]; }
@@ -690,29 +702,152 @@ function buildMap(divId, key) {
     { position:'topright', collapsed:false }
   ).addTo(m);
 
-  // ── Segunda divisória no painel de camadas: separa as camadas WMS
-  //    "normais" (IPHAN, FUNAI, ANM, ANEEL etc.) das camadas de POLÍGONO
-  //    GRANDE renderizadas em segundo plano (Exército e IBGE), que ficam no
-  //    final da lista. Usa o mesmo estilo da divisória nativa do Leaflet
-  //    (entre bases e camadas). ──
-  (function insertBackgroundSeparator(){
+  // ── Agrupamento das camadas padrão por INSTITUIÇÃO (similar ao "grupo" do
+  //    QGIS): instituições com mais de uma camada ganham grupo próprio; as de
+  //    camada única ficam em "Outros". Cada grupo abre/fecha ao ser clicado,
+  //    revelando as subcamadas. Dentro do grupo, as camadas renderizadas em
+  //    SEGUNDO PLANO ficam nas últimas posições, separadas por uma divisória.
+  //    As camadas "Limites Estaduais/Municipais" e "Toponímias" permanecem
+  //    soltas no topo, fora de grupos. ──
+  const STD_LAYER_GROUPS = [
+    { nome:'IPHAN',  re:/^IPHAN\b/i },
+    { nome:'IBGE',   re:/^IBGE\b/i },
+    { nome:'ICMBio', re:/^ICMBio\b/i },
+    { nome:'FUNAI',  re:/^FUNAI\b/i },
+    { nome:'EB/DSG', re:/^EB\/DSG\b/i },
+    { nome:'Outros', re:/^(ANA|VALEC|DNIT|SNIF\/SFB|DPHDM\/Marinha|ANM|ANEEL)\b/i },
+  ];
+  function groupStdOverlays(){
     const container = layersControl.getContainer();
-    if(!container || !WMS_LAYERS_BACKGROUND.length) return;
-    const firstBgName = WMS_LAYERS_BACKGROUND[0].nome;
-    const overlaysList = container.querySelector('.leaflet-control-layers-overlays');
+    const overlaysList = container && container.querySelector('.leaflet-control-layers-overlays');
     if(!overlaysList) return;
-    // Localiza o <label> cujo texto corresponde à primeira camada de fundo
+    const bgNames = WMS_LAYERS_BACKGROUND.map(d=>d.nome);
+    // Item de lista correspondente a cada <label> (o Leaflet envolve cada
+    // camada em uma <div>, mas versões diferentes podem variar).
+    const itemOf = label => (label.parentElement && label.parentElement !== overlaysList)
+      ? label.parentElement : label;
     const labels = [...overlaysList.querySelectorAll('label')];
-    const target = labels.find(l => l.textContent.trim().startsWith(firstBgName));
-    if(!target) return;
-    const hr = document.createElement('hr');
-    hr.className = 'leaflet-control-layers-separator';
-    // insere a divisória IMEDIATAMENTE ANTES do rótulo-alvo (respeitando a
-    // estrutura de wrapper que o Leaflet usa para cada item da lista)
-    const wrapper = target.closest('div') && target.closest('div').parentElement === overlaysList
-      ? target.closest('div') : target;
-    overlaysList.insertBefore(hr, wrapper);
-  })();
+    const grupos = new Map(); // nome do grupo → { body, count }
+
+    labels.forEach(label=>{
+      const txt = label.textContent.trim();
+      const g = STD_LAYER_GROUPS.find(x=>x.re.test(txt));
+      if(!g) return; // camada solta (Limites/Toponímias): permanece no topo
+      if(!grupos.has(g.nome)){
+        const wrap = document.createElement('div');
+        wrap.className = 'lc-group';
+        wrap.innerHTML = `<div class="lc-group-head" role="button" tabindex="0">
+            <span class="lc-group-arrow">▸</span>
+            <span class="lc-group-name">${escHtml(g.nome)}</span>
+            <span class="lc-group-count">0</span>
+          </div><div class="lc-group-body"></div>`;
+        overlaysList.appendChild(wrap);
+        const head = wrap.querySelector('.lc-group-head');
+        const body = wrap.querySelector('.lc-group-body');
+        const toggle = ()=>{
+          const aberto = wrap.classList.toggle('open');
+          wrap.querySelector('.lc-group-arrow').textContent = aberto ? '▾' : '▸';
+          // o conteúdo mudou de altura: reavalia o limite do painel
+          try{ adjustLayersMaxHeight(); }catch(e){}
+        };
+        head.addEventListener('click', toggle);
+        head.addEventListener('keydown', ev=>{
+          if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); toggle(); }
+        });
+        // Marca o grupo quando houver alguma subcamada ligada
+        body.addEventListener('change', ()=>{
+          const ativos = body.querySelectorAll('input[type="checkbox"]:checked').length;
+          wrap.classList.toggle('has-active', ativos>0);
+          wrap.querySelector('.lc-group-count').textContent =
+            ativos ? `${ativos}/${body.querySelectorAll('label').length}` : body.querySelectorAll('label').length;
+        });
+        grupos.set(g.nome, {wrap, body});
+      }
+      const {body} = grupos.get(g.nome);
+      // Divisória antes da primeira camada de segundo plano do grupo
+      const isBg = bgNames.some(n=>txt.startsWith(n));
+      if(isBg && !body.querySelector('.lc-group-bg-sep') && body.children.length){
+        const hr = document.createElement('hr');
+        hr.className = 'leaflet-control-layers-separator lc-group-bg-sep';
+        body.appendChild(hr);
+      }
+      body.appendChild(itemOf(label));
+    });
+
+    // Reordena os grupos conforme STD_LAYER_GROUPS e atualiza as contagens
+    STD_LAYER_GROUPS.forEach(g=>{
+      const info = grupos.get(g.nome);
+      if(!info) return;
+      overlaysList.appendChild(info.wrap);
+      info.wrap.querySelector('.lc-group-count').textContent =
+        info.body.querySelectorAll('label').length;
+    });
+  }
+  groupStdOverlays();
+
+  // ── Botão "Limpar" global: desmarca TODAS as camadas ativas do painel ──
+  // Usa o próprio fluxo de clique do Leaflet (_onInputClick), que processa o
+  // estado de todas as caixas de uma vez sem reconstruir a lista — assim os
+  // grupos montados acima são preservados.
+  const stdClearBtn = document.createElement('button');
+  stdClearBtn.type = 'button';
+  stdClearBtn.className = 'std-layers-clear';
+  stdClearBtn.textContent = '🧹 Limpar camadas ativas';
+  stdClearBtn.title = 'Desmarca todas as camadas ativas do painel';
+  function stdActiveInputs(){
+    const c = layersControl.getContainer();
+    const ov = c && c.querySelector('.leaflet-control-layers-overlays');
+    return ov ? [...ov.querySelectorAll('input[type="checkbox"]:checked')] : [];
+  }
+  function refreshStdClearBtn(){
+    const n = stdActiveInputs().length;
+    stdClearBtn.disabled = n === 0;
+    stdClearBtn.textContent = n ? `🧹 Limpar camadas ativas (${n})` : '🧹 Limpar camadas ativas';
+  }
+  stdClearBtn.addEventListener('click', ev=>{
+    ev.preventDefault(); ev.stopPropagation();
+    const ativos = stdActiveInputs();
+    if(!ativos.length) return;
+    ativos.forEach(i=>{ i.checked = false; });
+    try{ layersControl._onInputClick(); }
+    catch(e){ // reserva: remove as camadas diretamente
+      ativos.forEach(i=>{ const o = layersControl._getLayer && layersControl._getLayer(i.layerId);
+        if(o && o.layer && m.hasLayer(o.layer)) m.removeLayer(o.layer); });
+    }
+    // Atualiza os destaques/contadores dos grupos
+    lcContainerRefreshGroups();
+    refreshStdClearBtn();
+  });
+  function lcContainerRefreshGroups(){
+    const c = layersControl.getContainer();
+    if(!c) return;
+    c.querySelectorAll('.lc-group').forEach(g=>{
+      const body = g.querySelector('.lc-group-body');
+      if(!body) return;
+      const total = body.querySelectorAll('label').length;
+      const ativos = body.querySelectorAll('input[type="checkbox"]:checked').length;
+      g.classList.toggle('has-active', ativos>0);
+      const cnt = g.querySelector('.lc-group-count');
+      if(cnt) cnt.textContent = ativos ? `${ativos}/${total}` : total;
+    });
+  }
+  // Mantém o botão sincronizado com ligar/desligar de camadas
+  m.on('overlayadd overlayremove', ()=>{ refreshStdClearBtn(); lcContainerRefreshGroups(); });
+  layersControl.getContainer().appendChild(stdClearBtn);
+  refreshStdClearBtn();
+
+  // Se o Leaflet reconstruir a lista (ex.: camada adicionada dinamicamente),
+  // reaplica o agrupamento e reposiciona o botão Limpar.
+  const _lcUpdateOriginal = layersControl._update.bind(layersControl);
+  layersControl._update = function(){
+    _lcUpdateOriginal();
+    try{
+      groupStdOverlays();
+      layersControl.getContainer().appendChild(stdClearBtn);
+      lcContainerRefreshGroups();
+      refreshStdClearBtn();
+    }catch(e){ console.warn('[GeoTools] falha ao reagrupar camadas', e); }
+  };
 
   // ── Escala gráfica (barra): alterna automaticamente entre km e m conforme
   //    o zoom (como na INDE). Canto inferior esquerdo, na mesma linha do
@@ -726,13 +861,20 @@ function buildMap(divId, key) {
   const lcList = lcContainer.querySelector('.leaflet-control-layers-list');
 
   // Ajusta a altura máxima do painel de camadas para nunca invadir o rodapé
-  // (coordenadas/escala/medir). Recalcula no redimensionamento do mapa.
+  // (coordenadas/escala/medir). O espaço ocupado por tudo que NÃO é a lista
+  // (botão "Minimizar", botão "Limpar camadas ativas", paddings e bordas) é
+  // medido dinamicamente, para que a ALTURA TOTAL do painel respeite o limite
+  // mesmo com elementos adicionados ao seu rodapé. Recalcula ao redimensionar
+  // o mapa e ao abrir/fechar grupos.
   const FOOTER_CLEARANCE = 58; // altura do rodapé + folga
   function adjustLayersMaxHeight(){
     if(lcContainer.classList.contains('collapsed-manual')) return;
     const mapH = m.getSize().y;
     const top = 10;     // distância do topo do mapa ao controle
-    const chrome = 44;  // espaço do botão "Minimizar" + paddings
+    let chrome = 44;    // reserva inicial (antes do primeiro layout)
+    if(lcList && lcContainer.offsetHeight && lcList.offsetHeight){
+      chrome = Math.max(chrome, lcContainer.offsetHeight - lcList.offsetHeight);
+    }
     const h = Math.max(100, mapH - top - FOOTER_CLEARANCE - chrome);
     if(lcList){ lcList.style.maxHeight = h + 'px'; lcList.style.overflowY = 'auto'; }
   }
@@ -2192,6 +2334,20 @@ function clearUploadedLayers(key){
   if(typeof closeMeasurePopup==='function') closeMeasurePopup(key);
 }
 const PASTEL_COLORS = ['#5fa8d3','#cf8b6c','#9085d6','#6fa787','#d68fa6','#bda36a','#e0a35b','#7ea8f8'];
+// Cores padrão fixas por denominação, aplicadas SOMENTE à tipologia POLÍGONO:
+// polígonos de ADA entram em AMARELO e os de AID em VERMELHO (convenção usual
+// nas peças de licenciamento). Pontos e linhas do mesmo arquivo seguem a paleta
+// normal. Vale para qualquer formato importado; a cor continua alterável no
+// seletor do painel.
+const NAMED_LAYER_COLORS = { ada:'#fbff00', aid:'#f71302' };
+function colorForLayerName(name){
+  const n = String(name||'');
+  const isAda = /(^|[^a-z0-9])ada([^a-z0-9]|$)/i.test(n);
+  const isAid = /(^|[^a-z0-9])aid([^a-z0-9]|$)/i.test(n);
+  if(isAid) return NAMED_LAYER_COLORS.aid;   // "AID" tem precedência
+  if(isAda) return NAMED_LAYER_COLORS.ada;
+  return null;
+}
 let uploadedColorIdx = {ext:0, conv:0, inf:0};
 
 function initGeoUploadPanel(key, map, layersControl){
@@ -2367,6 +2523,105 @@ function nextColor(key){
   return c;
 }
 
+// ── Rótulos das camadas importadas no mapa ──────────────────────────────────
+// Campos disponíveis para rotular: os MESMOS exibidos no popup da feição
+// (propriedades da camada, limitadas a 8 como no popup).
+function geoLabelFields(geojson){
+  const keys = [];
+  (geojson?.features||[]).forEach(f=>{
+    Object.keys(f.properties||{}).forEach(k=>{ if(!keys.includes(k)) keys.push(k); });
+  });
+  return keys.slice(0,8);
+}
+
+// Aplica (ou remove) os rótulos permanentes da camada, conforme os campos
+// selecionados em entry.labelProps.
+function applyGeoLabels(entry){
+  if(!entry || !entry.layer) return;
+  const sel = entry.labelProps || [];
+  entry.layer.eachLayer(sub=>{
+    const props = (sub.feature && sub.feature.properties) || {};
+    // MultiPoint vira grupo: rotula cada parte
+    const alvos = (sub instanceof L.LayerGroup) ? [] : [sub];
+    if(sub instanceof L.LayerGroup) sub.eachLayer(c=>alvos.push(c));
+    alvos.forEach(t=>{
+      try{ if(t.getTooltip && t.getTooltip()) t.unbindTooltip(); }catch(e){}
+      if(!sel.length) return;
+      const txt = sel.map(k=>props[k])
+        .filter(v=>v!==undefined && v!==null && String(v).trim()!=='')
+        .map(v=>escHtml(String(v))).join('<br>');
+      if(!txt) return;
+      const isPonto = typeof t.getLatLng === 'function';
+      try{
+        t.bindTooltip(txt, {
+          permanent:true, opacity:1, className:'geo-map-label',
+          direction: isPonto ? 'top' : 'center',
+          offset: isPonto ? [0,-8] : [0,0],
+        });
+      }catch(e){ /* geometria sem âncora para rótulo */ }
+    });
+  });
+}
+
+// Abre o menu de seleção dos campos a exibir como rótulo no mapa.
+function openGeoLabelMenu(entry, btn, key){
+  closeGeoLabelMenu();
+  const campos = geoLabelFields(entry.geojson);
+  const menu = document.createElement('div');
+  menu.className = 'glt-label-menu';
+  menu.id = 'glt-label-menu';
+  const itens = campos.length
+    ? `<div class="glt-label-menu-list">${campos.map(c=>{
+        const on = (entry.labelProps||[]).includes(c) ? ' checked' : '';
+        return `<label><input type="checkbox" value="${escHtml(c)}"${on}><span>${escHtml(c)}</span></label>`;
+      }).join('')}</div>`
+    : `<div class="glt-label-menu-empty">Esta camada não possui propriedades.</div>`;
+  menu.innerHTML = `<div class="glt-label-menu-head">
+      <span class="glt-label-menu-title">Rótulos no mapa</span>
+      <span class="glt-label-menu-close" title="Fechar">✕</span>
+    </div>${itens}
+    ${campos.length ? '<div class="glt-label-menu-actions"><button type="button">Limpar</button></div>' : ''}`;
+  document.body.appendChild(menu);
+  menu.querySelector('.glt-label-menu-close').addEventListener('click', ev=>{
+    ev.stopPropagation();
+    closeGeoLabelMenu();
+  });
+
+  // Posiciona junto ao botão, sem sair da janela
+  const r = btn.getBoundingClientRect();
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let left = Math.min(r.left, window.innerWidth - mw - 8);
+  let top  = r.bottom + 6;
+  if(top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
+  menu.style.left = Math.max(8, left) + 'px';
+  menu.style.top  = top + 'px';
+
+  const atualizar = ()=>{
+    entry.labelProps = [...menu.querySelectorAll('input[type="checkbox"]:checked')].map(i=>i.value);
+    btn.classList.toggle('active', entry.labelProps.length>0);
+    btn.title = entry.labelProps.length
+      ? `Rótulos: ${entry.labelProps.join(', ')}` : 'Rótulos no mapa';
+    applyGeoLabels(entry);
+  };
+  menu.addEventListener('change', atualizar);
+  const btnLimpar = menu.querySelector('.glt-label-menu-actions button');
+  if(btnLimpar) btnLimpar.addEventListener('click', ()=>{
+    menu.querySelectorAll('input[type="checkbox"]').forEach(i=>{ i.checked = false; });
+    atualizar();
+  });
+  menu.addEventListener('click', ev=>ev.stopPropagation());
+  setTimeout(()=>{
+    document.addEventListener('click', closeGeoLabelMenu, {once:true});
+  }, 0);
+  document.addEventListener('keydown', _geoLabelMenuEsc);
+}
+function closeGeoLabelMenu(){
+  const m = document.getElementById('glt-label-menu');
+  if(m) m.remove();
+  document.removeEventListener('keydown', _geoLabelMenuEsc);
+}
+function _geoLabelMenuEsc(ev){ if(ev.key === 'Escape') closeGeoLabelMenu(); }
+
 function addGeoLayerToPanel(key, name, layer, color, map, ulc, geojson){
   const id = 'gl_'+Math.random().toString(36).slice(2,9);
 
@@ -2422,7 +2677,7 @@ function addGeoLayerToPanel(key, name, layer, color, map, ulc, geojson){
     badgeHtml = `<span class="glt-integrity ${cls}" title="${escHtml(tip)}" data-report="${escHtml(report.fileName)}">${icon}</span>`;
   }
 
-  item.innerHTML = `<input type="color" class="layer-color-input glt-color" value="${escHtml(color)}" title="Cor da camada"><span class="glt-name" title="${escHtml(name)}">${escHtml(name)}</span><span class="glt-types">${iconsHtml}</span>${badgeHtml}<span class="glt-rm" title="Remover">✕</span>`;
+  item.innerHTML = `<input type="color" class="layer-color-input glt-color" value="${escHtml(color)}" title="Cor da camada"><span class="glt-name" title="${escHtml(name)}">${escHtml(name)}</span><span class="glt-types">${iconsHtml}</span>${badgeHtml}<span class="glt-labels" title="Rótulos no mapa">🏷</span><span class="glt-rm" title="Remover">✕</span>`;
   const badgeEl = item.querySelector('.glt-integrity');
   if(badgeEl){
     badgeEl.addEventListener('click', (ev)=>{
@@ -2430,6 +2685,13 @@ function addGeoLayerToPanel(key, name, layer, color, map, ulc, geojson){
       openTrackReportModal(report);
     });
   }
+  item.querySelector('.glt-labels').addEventListener('click', ev=>{
+    ev.stopPropagation();
+    const entry = uploadedLayers[key].find(l=>l.id===id);
+    if(!entry) return;
+    if(document.getElementById('glt-label-menu')){ closeGeoLabelMenu(); return; }
+    openGeoLabelMenu(entry, ev.currentTarget, key);
+  });
   item.querySelector('.glt-color').addEventListener('input', e=>{
     const newColor = e.target.value;
     const entry = uploadedLayers[key].find(l=>l.id===id);
@@ -2437,6 +2699,7 @@ function addGeoLayerToPanel(key, name, layer, color, map, ulc, geojson){
     setGeoLayerColor(layer, newColor);
   });
   item.querySelector('.glt-rm').addEventListener('click', ()=>{
+    closeGeoLabelMenu();
     map.removeLayer(layer);
     if(ulc) ulc.removeLayer(layer);
     uploadedLayers[key] = uploadedLayers[key].filter(l=>l.id!==id);
@@ -2592,9 +2855,65 @@ function normalizeGeometryCollections(geojson){
   return geojson;
 }
 
+// Ponto de entrada de TODAS as importações (KML, KMZ, GeoJSON, GPX, CSV,
+// Shapefile). Quando o arquivo agrupa mais de uma tipologia (ex.: KML de LT com
+// torres = pontos, eixo = linha e faixa = polígono), as feições são
+// DESAGRUPADAS em camadas individuais — uma por tipologia —, para que o usuário
+// possa ligar/desligar e medir cada uma separadamente. Arquivos com uma única
+// tipologia continuam gerando uma única camada, com o nome original.
 function addGeoJSONToMap(key, geojson, name, map, layersControl){
   geojson = normalizeGeometryCollections(geojson);
-  const color = nextColor(key);
+  const feats = geojson.features || [];
+  const grupos = { polygon:[], line:[], point:[] };
+  feats.forEach(f=>{
+    const t = f.geometry && f.geometry.type;
+    if(t==='Polygon'||t==='MultiPolygon') grupos.polygon.push(f);
+    else if(t==='LineString'||t==='MultiLineString') grupos.line.push(f);
+    else if(t==='Point'||t==='MultiPoint') grupos.point.push(f);
+  });
+  const presentes = Object.keys(grupos).filter(t=>grupos[t].length);
+  // Cor fixa por denominação (ADA/AID) — aplicável APENAS a polígonos.
+  const corNomeada = colorForLayerName(name);
+  // Uma só tipologia (ou nenhuma reconhecida): comportamento original.
+  if(presentes.length <= 1){
+    const opts = (presentes[0] === 'polygon' && corNomeada) ? {color: corNomeada} : {};
+    return addGeoJSONLayerSingle(key, geojson, name, map, layersControl, opts);
+  }
+  // Mistura de tipologias: separa em camadas individuais. Cada tipologia recebe
+  // uma COR DISTINTA da paleta, para diferenciá-las no mapa; o polígono usa a
+  // cor da denominação quando houver (ADA/AID). A cor de cada camada pode ser
+  // alterada individualmente pelo seletor do painel.
+  const rotulos = { polygon:'Polígonos', line:'Linhas', point:'Pontos' };
+  const base = String(name).replace(/\.(kml|kmz|geojson|json|gpx|gtm|csv|zip)$/i, '');
+  const ext  = String(name).slice(base.length);
+  const criadas = [];
+  ['polygon','line','point'].forEach(t=>{
+    if(!grupos[t].length) return;
+    const sub = { type:'FeatureCollection', features: grupos[t] };
+    const nome = `${base} — ${rotulos[t]}${ext}`;
+    const cor = (t === 'polygon' && corNomeada) ? corNomeada : nextColor(key);
+    const lyr = addGeoJSONLayerSingle(key, sub, nome, map, layersControl, {color:cor, skipFit:true});
+    if(lyr) criadas.push(lyr);
+  });
+  console.info(`[GeoTools] "${name}": ${presentes.length} tipologias separadas em camadas individuais (${presentes.map(t=>rotulos[t].toLowerCase()).join(', ')}).`);
+  // Enquadra o mapa em TODAS as partes juntas (uma única vez)
+  try{
+    let total = null;
+    criadas.forEach(l=>{
+      const b = l.getBounds();
+      if(b && b.isValid()) total = total ? total.extend(b) : L.latLngBounds(b.getSouthWest(), b.getNorthEast());
+    });
+    if(total && total.isValid()) map.fitBounds(total, {padding:[32,32]});
+  }catch(e){ console.warn('Bounds inválidos ao enquadrar camadas separadas de', name, e); }
+  return criadas;
+}
+
+// Cria UMA camada a partir de um GeoJSON já homogêneo/normalizado.
+// opts: { color } cor fixa (compartilhada entre tipologias do mesmo arquivo)
+//       { skipFit } não enquadra o mapa (o enquadramento é feito pelo chamador)
+function addGeoJSONLayerSingle(key, geojson, name, map, layersControl, opts){
+  opts = opts || {};
+  const color = opts.color || nextColor(key);
   // Determina a tipologia predominante da coleção para escolher o pane
   // (prioridade de clique: ponto > linha > polígono).
   const tset = new Set();
@@ -2640,10 +2959,12 @@ function addGeoJSONToMap(key, geojson, name, map, layersControl){
     ulcContainer.querySelector('.leaflet-control-layers-list').appendChild(toggle);
   }
   addGeoLayerToPanel(key, name, layer, color, map, layersControl, geojson);
-  try{
-    const b = layer.getBounds();
-    if(b.isValid()) map.fitBounds(b, {padding:[32,32]});
-  }catch(e){ console.warn('Bounds inválidos para camada', name, e); }
+  if(!opts.skipFit){
+    try{
+      const b = layer.getBounds();
+      if(b.isValid()) map.fitBounds(b, {padding:[32,32]});
+    }catch(e){ console.warn('Bounds inválidos para camada', name, e); }
+  }
   // Garante a renderização imediata das feições (evita o efeito de só aparecer
   // após o primeiro zoom). O reflow causado por nomes de camada longos no painel
   // pode deixar os renderizadores dessincronizados; forçamos um reset completo
@@ -2660,6 +2981,7 @@ function addGeoJSONToMap(key, geojson, name, map, layersControl){
   setTimeout(forceRedraw, 60);
   // Segundo redraw após o reflow do painel de camadas (nomes longos):
   setTimeout(forceRedraw, 350);
+  return layer;
 }
 
 // ── Detecta zona UTM a partir do .prj (WKT) ou estima pela Easting ──
@@ -3192,6 +3514,41 @@ async function importCsvFile(key, file, map, layersControl){
 }
 
 // Lê um arquivo KML ou KMZ e adiciona ao mapa.
+// Faz o parse de um texto KML de forma TOLERANTE. Alguns exportadores (ex.:
+// "Layer to KML" do ArcGIS) usam atributos com prefixos de namespace não
+// declarados (tipicamente xsi:schemaLocation sem xmlns:xsi no elemento raiz).
+// O DOMParser do navegador é estrito e rejeita o documento inteiro
+// (parsererror) — enquanto Google Earth e QGIS abrem normalmente. Aqui, se o
+// parse falhar, declaramos os prefixos ausentes no elemento raiz e tentamos de
+// novo.
+function parseKmlDom(kmlText){
+  let dom = new DOMParser().parseFromString(kmlText, 'text/xml');
+  if(!dom.querySelector('parsererror')) return dom;
+  // Coleta prefixos usados em elementos (<pfx:tag) e atributos (pfx:attr=)
+  const used = new Set();
+  (kmlText.match(/<\/?([A-Za-z][\w.-]*):/g)||[]).forEach(m=>used.add(m.replace(/[<\/:]/g,'')));
+  (kmlText.match(/\s([A-Za-z][\w.-]*):[\w.-]+\s*=/g)||[]).forEach(m=>used.add(m.trim().split(':')[0]));
+  used.delete('xml'); used.delete('xmlns');
+  const KNOWN = {
+    xsi:'http://www.w3.org/2001/XMLSchema-instance',
+    gx:'http://www.google.com/kml/ext/2.2',
+    atom:'http://www.w3.org/2005/Atom',
+    kml:'http://www.opengis.net/kml/2.2',
+    xal:'urn:oasis:names:tc:ciq:xsdschema:xAL:2.0',
+  };
+  const missing = [...used].filter(p=>!new RegExp('xmlns:'+p+'\\s*=').test(kmlText));
+  if(missing.length){
+    const decls = missing.map(p=>` xmlns:${p}="${KNOWN[p]||('http://tempuri.org/'+p)}"`).join('');
+    const fixed = kmlText.replace(/<kml\b([^>]*)>/, (m,attrs)=>`<kml${attrs}${decls}>`);
+    const dom2 = new DOMParser().parseFromString(fixed, 'text/xml');
+    if(!dom2.querySelector('parsererror')){
+      console.info(`[GeoTools] KML corrigido: namespace(s) não declarado(s) [${missing.join(', ')}] adicionados ao elemento raiz.`);
+      return dom2;
+    }
+  }
+  return dom; // devolve o original (com erro) para o fluxo tratar
+}
+
 async function importKmlFile(key, file, map, layersControl){
   let kmlText;
   if(/\.kmz$/i.test(file.name)){
@@ -3202,10 +3559,15 @@ async function importKmlFile(key, file, map, layersControl){
   } else {
     kmlText = await file.text();
   }
-  const dom = new DOMParser().parseFromString(kmlText, 'text/xml');
-  const geojson = toGeoJSON.kml(dom);
+  const dom = parseKmlDom(kmlText);
+  const parseErr = dom.querySelector('parsererror');
+  const geojson = parseErr ? {features:[]} : toGeoJSON.kml(dom);
   if(!geojson.features || !geojson.features.length){
-    alert('Nenhuma feição encontrada no arquivo KML.');
+    if(parseErr){
+      alert(`O arquivo KML contém erros de estrutura XML e não pôde ser lido:\n\n${parseErr.textContent.trim().split('\n')[1] || 'erro de sintaxe XML'}\n\nDica: abra e reexporte o arquivo no QGIS ou Google Earth para corrigi-lo.`);
+    } else {
+      alert('Nenhuma feição encontrada no arquivo KML.');
+    }
     return;
   }
   addGeoJSONToMap(key, geojson, file.name, map, layersControl);
@@ -3237,8 +3599,8 @@ async function importZippedArchive(key, file, map, layersControl){
     for(const entry of kmlEntries){
       try{
         const txt = await entry.async('text');
-        const dom = new DOMParser().parseFromString(txt, 'text/xml');
-        const gj = toGeoJSON.kml(dom);
+        const dom = parseKmlDom(txt);
+        const gj = dom.querySelector('parsererror') ? {features:[]} : toGeoJSON.kml(dom);
         if(gj.features && gj.features.length){
           addGeoJSONToMap(key, gj, entry.name.split('/').pop(), map, layersControl);
           added++;
@@ -3252,8 +3614,8 @@ async function importZippedArchive(key, file, map, layersControl){
         const innerKml = Object.values(innerZip.files).find(f=>/\.kml$/i.test(f.name));
         if(innerKml){
           const txt = await innerKml.async('text');
-          const dom = new DOMParser().parseFromString(txt, 'text/xml');
-          const gj = toGeoJSON.kml(dom);
+          const dom = parseKmlDom(txt);
+          const gj = dom.querySelector('parsererror') ? {features:[]} : toGeoJSON.kml(dom);
           if(gj.features && gj.features.length){
             addGeoJSONToMap(key, gj, entry.name.split('/').pop(), map, layersControl);
             added++;
