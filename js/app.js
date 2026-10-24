@@ -42,6 +42,13 @@ function fallbackCopy(text, done){
 }
 
 // Monta o HTML de uma célula de coordenada com botão de copiar à direita.
+// Célula de valor UTM (texto já formatado) com botão de copiar
+function utmCell(txt){
+  const t=escHtml(txt);
+  return `<span class="coord-cell"><span class="coord-val">${t}</span>`
+       + `<button type="button" class="copy-coord-btn" title="Copiar" `
+       + `onclick="event.stopPropagation();copyCoord('${t}', this)" aria-label="Copiar coordenada">⧉</button></span>`;
+}
 function coordCell(valueNum){
   const display = valueNum.toFixed(6);
   return `<span class="coord-cell"><span class="coord-val">${display}°</span>`
@@ -54,6 +61,174 @@ function coordCell(valueNum){
 //  MAPAS — declarados antes do tema (applyTheme usa maps)
 // ════════════════════════════════════════
 const maps = {ext:null, conv:null, inf:null};
+
+// ════════════════════════════════════════
+//  FORMATO DAS COORDENADAS (rodapé + popup de clique no mapa)
+// ════════════════════════════════════════
+// Um único formato vale para as três telas, para manter coerência entre o
+// campo "Coordenadas" do rodapé, o popup exibido ao clicar no mapa e o código
+// EPSG do rodapé. Padrão: UTM (SIRGAS 2000). A escolha fica salva no navegador.
+const COORD_FMT_KEY = 'checklic-coord-fmt';
+let coordFmt = 'utm';
+try{ const v=localStorage.getItem(COORD_FMT_KEY); if(v==='utm'||v==='geo') coordFmt=v; }catch(e){}
+const _lastCoordLL = {conv:null, ext:null, inf:null};
+
+// Código EPSG do SIRGAS 2000 / UTM para o fuso (null se não houver código)
+function epsgSirgasUTM(zone, south){
+  if(south && zone>=17 && zone<=25) return 31960+zone;      // 31977 (17S) … 31985 (25S)
+  if(!south && zone>=11 && zone<=22) return 31954+zone;     // 31965 (11N) … 31976 (22N)
+  if(!south && zone===23) return 6210;
+  if(!south && zone===24) return 6211;
+  return null;
+}
+function _utmInfo(lat, lon){
+  const u=geoToUTM(lat, lon), south=lat<0;
+  return {...u, south, epsg:epsgSirgasUTM(u.zone, south)};
+}
+function fmtFooterCoord(lat, lon){
+  if(coordFmt==='geo') return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+  const u=geoToUTM(lat, lon);
+  return `${u.zone}${u.letter} ${Math.round(u.E)} E ${Math.round(u.N)} N`;
+}
+// Atualiza o campo de coordenadas e o código EPSG do rodapé de uma tela
+function showFooterCoord(key, latlng){
+  if(!latlng) return;
+  _lastCoordLL[key]=latlng;
+  const el=document.getElementById('coord-'+key);
+  if(el && el!==document.activeElement) el.value=fmtFooterCoord(latlng.lat, latlng.lng);
+  updateEpsgLabel(key, latlng);
+}
+function updateEpsgLabel(key, latlng){
+  const el=document.getElementById('epsgcode-'+key); if(!el) return;
+  let txt='EPSG:4326';
+  if(coordFmt==='utm' && latlng){
+    const u=_utmInfo(latlng.lat, latlng.lng);
+    txt = u.epsg ? `EPSG:${u.epsg}` : `UTM ${u.zone}${u.south?'S':'N'}`;
+  }
+  if(el.textContent!==txt) el.textContent=txt;
+}
+// Linhas do popup "📍 Coordenadas" conforme o formato escolhido
+function coordPopupRows(latlng){
+  if(coordFmt==='geo') return [
+    ['Latitude',  latlng.lat.toFixed(6)+'°'],
+    ['Longitude', latlng.lng.toFixed(6)+'°'],
+  ];
+  const u=_utmInfo(latlng.lat, latlng.lng);
+  const dec=v=>v.toFixed(2).replace('.',',');
+  return [
+    ['Zona UTM', `${u.zone}${u.letter}`],
+    ['E (m)', dec(u.E)],
+    ['N (m)', dec(u.N)],
+    ['Referência', `SIRGAS 2000 / UTM ${u.zone}${u.south?'S':'N'}${u.epsg?' · EPSG:'+u.epsg:''}`],
+  ];
+}
+// Interpreta o texto digitado no rodapé: UTM ("23K 193110 E 8251130 N",
+// "23 193110 8251130") ou lat/long ("-15.79, -47.88"). Retorna {lat,lon}|null.
+function parseCoordInput(txt){
+  const t=String(txt||'').trim().toUpperCase().replace(/°/g,'');
+  if(!t) return null;
+  const num=s=>parseFloat(String(s).replace(',','.'));
+  const zm=t.match(/^(\d{1,2})\s*([C-HJ-NP-X])(?![A-Z])/);
+  const resto = zm ? t.slice(zm[0].length) : t;
+  const nums=(resto.match(/-?\d+(?:[.,]\d+)?/g)||[]);
+  let zone=null, letter=null, E=NaN, N=NaN;
+  if(zm && nums.length>=2){ zone=+zm[1]; letter=zm[2]; E=num(nums[0]); N=num(nums[1]); }
+  else if(!zm && nums.length>=3 && Math.abs(num(nums[1]))>1000){ zone=+nums[0]; letter='K'; E=num(nums[1]); N=num(nums[2]); }
+  if(zone!==null){
+    // sem letra, assume hemisfério Sul (maior parte do Brasil)
+    if(!(zone>=1&&zone<=60) || !(E>=100000&&E<=900000) || !(N>=0&&N<=10000000)) return null;
+    const g=utmToGeo(E, N, zone, letter);
+    return g && isFinite(g.lat) && isFinite(g.lon) ? {lat:g.lat, lon:g.lon} : null;
+  }
+  if(nums.length<2) return null;
+  const lat=num(nums[0]), lon=num(nums[1]);
+  if(!isFinite(lat)||!isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180) return null;
+  return {lat, lon};
+}
+function _coordFmtTag(){ return coordFmt==='utm' ? 'UTM' : 'Lat/Long'; }
+function _coordPlaceholder(){ return coordFmt==='utm' ? '23L 193110 E 8251130 N' : 'lat, lon'; }
+function applyCoordFmtUI(){
+  document.querySelectorAll('[data-coordfmt-tag]').forEach(t=>t.textContent=_coordFmtTag());
+  ['conv','ext','inf'].forEach(k=>{
+    const el=document.getElementById('coord-'+k);
+    if(el) el.placeholder=_coordPlaceholder();
+    if(_lastCoordLL[k]) showFooterCoord(k, _lastCoordLL[k]); else updateEpsgLabel(k, null);
+  });
+}
+function setCoordFmt(fmt){
+  if(fmt!=='utm' && fmt!=='geo') return;
+  coordFmt=fmt;
+  try{ localStorage.setItem(COORD_FMT_KEY, fmt); }catch(e){}
+  applyCoordFmtUI();
+  // Popup de coordenadas aberto: refaz no novo formato
+  Object.values(maps).forEach(m=>{
+    const cp=m && m._coordPopup;
+    if(cp && cp.popup && m.hasLayer(cp.popup) && typeof m._openCoordPopup==='function') m._openCoordPopup(cp.latlng);
+  });
+  closeCoordFmtMenu();
+}
+function closeCoordFmtMenu(){
+  const menu=document.getElementById('coordfmt-menu');
+  if(menu){
+    const btn=document.getElementById('coordFmtBtn-'+menu.dataset.key);
+    if(btn) btn.setAttribute('aria-expanded','false');
+    menu.remove();
+  }
+  document.removeEventListener('mousedown', _coordFmtOutside, true);
+  document.removeEventListener('keydown', _coordFmtKey, true);
+}
+function _coordFmtOutside(e){
+  const menu=document.getElementById('coordfmt-menu');
+  if(!menu) return;
+  if(menu.contains(e.target) || (e.target.closest && e.target.closest('.mf-coord-fmt'))) return;
+  closeCoordFmtMenu();
+}
+function _coordFmtKey(e){ if(e.key==='Escape'){ e.stopPropagation(); closeCoordFmtMenu(); } }
+function toggleCoordFmtMenu(ev, key){
+  if(ev) ev.stopPropagation();
+  const aberto=document.getElementById('coordfmt-menu');
+  if(aberto){ const mesmo=aberto.dataset.key===key; closeCoordFmtMenu(); if(mesmo) return; }
+  const btn=document.getElementById('coordFmtBtn-'+key);
+  const host=document.getElementById('footer-'+key)?.parentElement;
+  if(!btn || !host) return;
+  const menu=document.createElement('div');
+  menu.id='coordfmt-menu'; menu.className='coordfmt-menu'; menu.dataset.key=key;
+  menu.setAttribute('role','menu');
+  const opt=(v,ic,tit,sub)=>`<button type="button" role="menuitemradio" aria-checked="${coordFmt===v}" class="${coordFmt===v?'on':''}" onclick="setCoordFmt('${v}')"><span class="cfm-ic">${ic}</span><span class="cfm-txt"><b>${tit}</b><small>${sub}</small></span><span class="cfm-chk">${coordFmt===v?'✓':''}</span></button>`;
+  menu.innerHTML=`<div class="cfm-hdr">Exibir coordenadas em</div>`
+    + opt('utm','📐','UTM (E, N)','SIRGAS 2000 · metros · fuso automático')
+    + opt('geo','🌐','Latitude / Longitude','Graus decimais')
+    + `<div class="cfm-note">Vale para o rodapé e para o popup ao clicar no mapa.</div>`;
+  host.appendChild(menu);
+  L.DomEvent.disableClickPropagation(menu); L.DomEvent.disableScrollPropagation(menu);
+  const hb=host.getBoundingClientRect(), bb=btn.getBoundingClientRect();
+  menu.style.left=Math.max(6, bb.left-hb.left)+'px';
+  menu.style.bottom=(hb.bottom-bb.top+6)+'px';
+  btn.setAttribute('aria-expanded','true');
+  setTimeout(()=>{
+    document.addEventListener('mousedown', _coordFmtOutside, true);
+    document.addEventListener('keydown', _coordFmtKey, true);
+    menu.querySelector('button.on')?.focus();
+  },0);
+}
+
+// Emendas entre blocos (tiles) do mapa: em telas com escala de exibição
+// fracionária (125%, 150%, zoom do navegador ≠ 100%) o navegador arredonda a
+// posição de cada bloco e surgem linhas finas formando uma "grade" sobre o
+// mapa. Cada bloco é ampliado em 1 px para sobrepor o vizinho e fechar a fresta.
+(function(){
+  if(typeof L==='undefined' || !L.GridLayer || L.GridLayer._semEmendas) return;
+  const initTileOrig = L.GridLayer.prototype._initTile;
+  L.GridLayer.include({
+    _initTile(tile){
+      initTileOrig.call(this, tile);
+      const ts = this.getTileSize();
+      tile.style.width  = (ts.x + 1) + 'px';
+      tile.style.height = (ts.y + 1) + 'px';
+    }
+  });
+  L.GridLayer._semEmendas = true;
+})();
 const mkrs = {ext:[], conv:[], inf:[]};
 
 // ════════════════════════════════════════
@@ -1395,7 +1570,7 @@ function buildMap(divId, key) {
         return; // preserva o último valor exibido
       }
     }
-    el.value = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
+    showFooterCoord(key, e.latlng);
   });
   // Ao sair do mapa, mantém a ÚLTIMA coordenada exibida (não reseta),
   // permitindo que o usuário edite a partir dela.
@@ -1417,10 +1592,11 @@ function buildMap(divId, key) {
   // coordenada válida antes de qualquer movimento do cursor.
   function initCoordDisplay(){
     const el = document.getElementById('coord-'+key);
-    if(el && el !== document.activeElement && !el.value){
-      const c = m.getCenter();
-      el.value = `${c.lat.toFixed(6)}, ${c.lng.toFixed(6)}`;
+    if(el){
+      el.placeholder = _coordPlaceholder();
+      document.querySelectorAll('[data-coordfmt-tag]').forEach(t=>t.textContent=_coordFmtTag());
     }
+    if(el && el !== document.activeElement && !el.value) showFooterCoord(key, m.getCenter());
   }
   m.on('load', initCoordDisplay);
   setTimeout(initCoordDisplay, 300);
@@ -1433,12 +1609,11 @@ function buildMap(divId, key) {
 
     // Reposiciona o mapa a partir de "lat, lon" digitado
     function applyCoord(txt){
-      // aceita formatos: "-15.79, -47.88", "-15.79°, -47.88°", "-15.79 -47.88"
-      const nums = (txt||'').replace(/°/g,'').match(/-?\d+(?:[.,]\d+)?/g);
-      if(!nums || nums.length < 2) return false;
-      const lat = parseFloat(nums[0].replace(',','.'));
-      const lon = parseFloat(nums[1].replace(',','.'));
-      if(!isFinite(lat)||!isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180) return false;
+      // aceita UTM ("23K 193110 E 8251130 N", "23 193110 8251130") e
+      // lat/long ("-15.79, -47.88", "-15.79°, -47.88°", "-15.79 -47.88")
+      const p = parseCoordInput(txt);
+      if(!p) return false;
+      const lat = p.lat, lon = p.lon;
       const z = Math.max(m.getZoom(), 14);
       m.setView([lat,lon], z);
       // marcador temporário para indicar o ponto
@@ -1474,6 +1649,8 @@ function buildMap(divId, key) {
           coordEl.classList.add('mf-flash');
           setTimeout(()=>coordEl.classList.remove('mf-flash'), 500);
           coordEl.blur();
+          // reexibe no formato escolhido a coordenada digitada
+          setTimeout(()=>{ const p=parseCoordInput(coordEl.value); if(p) showFooterCoord(key, L.latLng(p.lat,p.lon)); }, 0);
         } else {
           coordEl.classList.add('mf-invalid');
         }
@@ -1552,10 +1729,21 @@ function buildMap(divId, key) {
     // Duas condições: escala grande (zoom alto) E camada base Satélite (Esri)
     // ativa — o histórico do Wayback refere-se à imagem Esri World Imagery.
     const satActive = m.hasLayer(sat);
-    btn.style.display = (satActive && m.getZoom() >= WAYBACK_MIN_ZOOM) ? '' : 'none';
+    const vis = (satActive && m.getZoom() >= WAYBACK_MIN_ZOOM) ? '' : 'none';
+    if(btn.style.display !== vis){ btn.style.display = vis; fitMapFooter(key); }
   }
   m.on('zoomend load baselayerchange', updateWaybackButton);
   updateWaybackButton();
+
+  // Rodapé adaptável: encurta os rótulos dos botões (e, se preciso, deixa só
+  // os ícones) conforme o espaço disponível — inclusive quando o botão
+  // "Histórico de imagens" aparece ou a divisória do painel é arrastada.
+  const footerFitEl = document.getElementById('footer-'+key);
+  if(footerFitEl && 'ResizeObserver' in window && !footerFitEl._fitObs){
+    footerFitEl._fitObs = new ResizeObserver(()=>fitMapFooter(key));
+    footerFitEl._fitObs.observe(footerFitEl);
+  }
+  fitMapFooter(key);
 
   // ── Clique no mapa: se Limites Estaduais/Municipais não estiverem
   //    ativos e o clique não atingir outra camada, exibe coordenadas ──
@@ -1583,11 +1771,13 @@ function buildMap(divId, key) {
     const hasEstado = m.hasLayer(estadoGroup);
     const hasMun = m.hasLayer(munGroup);
     if (hasEstado || hasMun) return; // outras camadas tratam seus próprios cliques
-    openInfoPopup(e.latlng, '📍 Coordenadas', [
-      ['Latitude',  e.latlng.lat.toFixed(6)+'°'],
-      ['Longitude', e.latlng.lng.toFixed(6)+'°'],
-    ]);
+    m._openCoordPopup(e.latlng);
   });
+  // Popup de coordenadas do clique — segue o formato escolhido no rodapé
+  m._openCoordPopup = latlng => {
+    openInfoPopup(latlng, '📍 Coordenadas', coordPopupRows(latlng));
+    m._coordPopup = {latlng, popup: m._popup};
+  };
 
   // ── Impede que cliques no rodapé (botão Medir, etc.) cheguem ao mapa ──
   const footerEl = document.getElementById('footer-'+key);
@@ -1596,6 +1786,10 @@ function buildMap(divId, key) {
   if(measurePanelEl) L.DomEvent.disableClickPropagation(measurePanelEl);
   const areaPanelEl = document.getElementById('area-'+key);
   if(areaPanelEl) L.DomEvent.disableClickPropagation(areaPanelEl);
+  const vtxPanelEl = document.getElementById('vtx-'+key);
+  if(vtxPanelEl){ L.DomEvent.disableClickPropagation(vtxPanelEl); L.DomEvent.disableScrollPropagation(vtxPanelEl); }
+  const distPanelEl = document.getElementById('dist-'+key);
+  if(distPanelEl){ L.DomEvent.disableClickPropagation(distPanelEl); L.DomEvent.disableScrollPropagation(distPanelEl); }
 
   if(!measureState[key]) measureState[key] = {points:[], line:null, rubberLine:null, vertexLayer:null, active:false, unit:'m', handlers:{}};
   ensureMeasureHandlers(key);
@@ -1612,6 +1806,20 @@ function buildMap(divId, key) {
 // Insere uma divisória arrastável entre a pane-left (tabela/camadas) e a
 // pane-right (mapa), mantendo a proporção padrão 30/70 e permitindo ao usuário
 // redimensionar. A largura é aplicada em % para permanecer responsiva.
+// Ajusta o rodapé do mapa ao espaço disponível: nível 1 encurta os rótulos
+// ("Área", "Histórico"); nível 2 deixa os botões só com ícone. O nome completo
+// permanece no texto de ajuda (title) de cada botão.
+function fitMapFooter(key){
+  const f=document.getElementById('footer-'+key);
+  if(!f || !f.clientWidth) return;
+  const niveis=['mf-compact-1','mf-compact-2','mf-compact-3','mf-compact-4'];
+  f.classList.remove(...niveis);
+  const cabe=()=> f.scrollWidth <= f.clientWidth + 1;
+  // 1: rótulos curtos · 2: botões só com ícone · 3: sem rótulos de texto dos
+  // campos e sem separadores · 4: campos mais estreitos e sem o campo de zoom
+  for(const n of niveis){ if(cabe()) return; f.classList.add(n); }
+}
+
 function setupResizableDivider(key, m){
   const mapEl = document.getElementById('map-'+key);
   if(!mapEl) return;
@@ -1699,7 +1907,7 @@ function setupResizableDivider(key, m){
   });
 }
 
-function addMarker(key, lat, lon, label, idx) {
+function addMarker(key, lat, lon, label, idx, utm) {
   const m = maps[key]; if (!m) return null;
   const icon = L.divIcon({
     className:'',
@@ -1707,26 +1915,47 @@ function addMarker(key, lat, lon, label, idx) {
     iconSize:[26,26], iconAnchor:[13,13]
   });
   const mk = L.marker([lat,lon],{icon})
-    .bindPopup(
-      `<div style="min-width:200px">
+    .bindPopup(_markerPopupHtml(label, lat, lon, utm), {maxWidth:300, className:'rich-popup'})
+    .addTo(m);
+  mkrs[key].push(mk);
+  _schedDistButton(key);
+  return mk;
+}
+// Atualiza o botão "Distância entre pontos" após a tabela ser (re)montada
+const _distBtnTimers={};
+function _schedDistButton(key){
+  clearTimeout(_distBtnTimers[key]);
+  _distBtnTimers[key]=setTimeout(()=>updateDistButton(key), 60);
+}
+// Popup dos marcadores das tabelas. Com "utm" ({zona,E,N}), exibe também as
+// coordenadas UTM (usado na tela Converter: entrada UTM + resultado lat/long).
+function _markerPopupHtml(label, lat, lon, utm){
+  const td='color:var(--muted);padding:2px 10px 2px 0';
+  const sec=t=>`<tr><td colspan="2" class="mk-pop-sec">${t}</td></tr>`;
+  let utmRows='';
+  if(utm && isFinite(+utm.E) && isFinite(+utm.N)){
+    const v=x=>(+x).toFixed(2).replace('.',',');
+    utmRows = sec('UTM — SIRGAS 2000')
+      + `<tr><td style="${td}">Zona</td><td style="font-weight:500">${escHtml(utm.zona||'')}</td></tr>`
+      + `<tr><td style="${td}">E (m)</td><td style="font-weight:500">${utmCell(v(utm.E))}</td></tr>`
+      + `<tr><td style="${td}">N (m)</td><td style="font-weight:500">${utmCell(v(utm.N))}</td></tr>`;
+  }
+  return `<div style="min-width:200px">
         <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;
              margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid var(--border)">
           📍 ${escHtml(label)}
         </div>
         <table style="border-collapse:collapse;width:100%;font-size:12px">
-          <tr><td style="color:var(--muted);padding:2px 10px 2px 0">Latitude</td>
+          ${utmRows?sec('Latitude / Longitude'):''}
+          <tr><td style="${td}">Latitude</td>
               <td style="font-weight:500">${coordCell(lat)}</td></tr>
-          <tr><td style="color:var(--muted);padding:2px 10px 2px 0">Longitude</td>
+          <tr><td style="${td}">Longitude</td>
               <td style="font-weight:500">${coordCell(lon)}</td></tr>
+          ${utmRows}
         </table>
-      </div>`,
-      {maxWidth:280, className:'rich-popup'}
-    )
-    .addTo(m);
-  mkrs[key].push(mk);
-  return mk;
+      </div>`;
 }
-function clearMarkers(key){ const m=maps[key]; if(!m)return; mkrs[key].forEach(mk=>m.removeLayer(mk)); mkrs[key]=[]; }
+function clearMarkers(key){ const m=maps[key]; if(!m)return; mkrs[key].forEach(mk=>m.removeLayer(mk)); mkrs[key]=[]; _schedDistButton(key); }
 function fitMap(key, bounds){
   const m=maps[key]; if(!m||!bounds.length)return;
   if(bounds.length===1) m.setView(bounds[0],14);
@@ -1767,7 +1996,9 @@ function buildMeasurePanel(key){
 }
 
 function openMeasurePopup(key){
+  if(typeof closeDistPopup==='function') closeDistPopup(key);
   if(typeof closeAreaPopup==='function') closeAreaPopup(key);
+  if(typeof closeVertexPopup==='function') closeVertexPopup(key);
   buildMeasurePanel(key);
   const panel = document.getElementById('measure-'+key);
   panel.classList.add('open');
@@ -1994,8 +2225,10 @@ function fmtArea(m2){
 function openAreaPopup(key){
   const btn = document.getElementById('areaBtn-'+key);
   if(btn && btn.disabled) return;
-  // fecha o painel de medição se estiver aberto
+  // fecha os painéis de medição e de vértices se estiverem abertos
   closeMeasurePopup(key);
+  if(typeof closeVertexPopup==='function') closeVertexPopup(key);
+  if(typeof closeDistPopup==='function') closeDistPopup(key);
   buildAreaPanelList(key);
   const panel = document.getElementById('area-'+key);
   panel.classList.add('open');
@@ -2332,6 +2565,7 @@ function clearUploadedLayers(key){
   // Fecha popups de medição/área se abertos
   if(typeof closeAreaPopup==='function') closeAreaPopup(key);
   if(typeof closeMeasurePopup==='function') closeMeasurePopup(key);
+  if(typeof closeVertexPopup==='function') closeVertexPopup(key);
 }
 const PASTEL_COLORS = ['#5fa8d3','#cf8b6c','#9085d6','#6fa787','#d68fa6','#bda36a','#e0a35b','#7ea8f8'];
 // Cores padrão fixas por denominação, aplicadas SOMENTE à tipologia POLÍGONO:
@@ -2636,7 +2870,7 @@ function addGeoLayerToPanel(key, name, layer, color, map, ulc, geojson){
     else if(t==='Polygon'||t==='MultiPolygon') types.add('polygon');
   });
 
-  uploadedLayers[key].push({id, name, layer, color, geojson, types:[...types], hasPolygon:types.has('polygon'), hasLine:types.has('line'), pointCount});
+  uploadedLayers[key].push({id, name, layer, color, dotColor:IMP_POINT_DOT_DEFAULT, geojson, types:[...types], hasPolygon:types.has('polygon'), hasLine:types.has('line'), pointCount});
   const panel = document.getElementById('geoup-'+key);
   panel.classList.add('show');
   const list = document.getElementById('geolist-'+key);
@@ -2677,7 +2911,11 @@ function addGeoLayerToPanel(key, name, layer, color, map, ulc, geojson){
     badgeHtml = `<span class="glt-integrity ${cls}" title="${escHtml(tip)}" data-report="${escHtml(report.fileName)}">${icon}</span>`;
   }
 
-  item.innerHTML = `<input type="color" class="layer-color-input glt-color" value="${escHtml(color)}" title="Cor da camada"><span class="glt-name" title="${escHtml(name)}">${escHtml(name)}</span><span class="glt-types">${iconsHtml}</span>${badgeHtml}<span class="glt-labels" title="Rótulos no mapa">🏷</span><span class="glt-rm" title="Remover">✕</span>`;
+  // Camadas com pontos ganham um 2º seletor (redondo) para a cor do miolo
+  const dotHtml = types.has('point')
+    ? `<span class="glt-dot-wrap"><input type="color" class="layer-color-input glt-dot" value="${IMP_POINT_DOT_DEFAULT}" title="Cor do miolo dos pontos (padrão: preto)" aria-label="Cor do miolo dos pontos da camada ${escHtml(name)}"><button type="button" class="glt-dot-reset" title="Restaurar a cor padrão do miolo (preto)" aria-label="Restaurar a cor padrão do miolo" hidden>↺</button></span>`
+    : '';
+  item.innerHTML = `<input type="color" class="layer-color-input glt-color" value="${escHtml(color)}" title="${types.has('point')?'Cor da camada (contorno dos pontos, linhas e polígonos)':'Cor da camada'}">${dotHtml}<span class="glt-name" title="${escHtml(name)}">${escHtml(name)}</span><span class="glt-types">${iconsHtml}</span>${badgeHtml}<span class="glt-labels" title="Rótulos no mapa">🏷</span><span class="glt-rm" title="Remover">✕</span>`;
   const badgeEl = item.querySelector('.glt-integrity');
   if(badgeEl){
     badgeEl.addEventListener('click', (ev)=>{
@@ -2698,6 +2936,24 @@ function addGeoLayerToPanel(key, name, layer, color, map, ulc, geojson){
     if(entry) entry.color = newColor;
     setGeoLayerColor(layer, newColor);
   });
+  const dotInput = item.querySelector('.glt-dot');
+  if(dotInput){
+    const dotReset = item.querySelector('.glt-dot-reset');
+    const applyDot = c=>{
+      const entry = uploadedLayers[key].find(l=>l.id===id);
+      if(entry) entry.dotColor = c;
+      // com os vértices desta camada à mostra, guarda a cor e só a aplica
+      // quando a ferramenta Vértices for fechada
+      if(!_vtxOverrideActive(key, id)) setGeoLayerDotColor(layer, c);
+      dotReset.hidden = c.toLowerCase()===IMP_POINT_DOT_DEFAULT;
+    };
+    dotInput.addEventListener('input', e=>applyDot(e.target.value));
+    dotReset.addEventListener('click', ev=>{
+      ev.stopPropagation();
+      dotInput.value = IMP_POINT_DOT_DEFAULT;
+      applyDot(IMP_POINT_DOT_DEFAULT);
+    });
+  }
   item.querySelector('.glt-rm').addEventListener('click', ()=>{
     closeGeoLabelMenu();
     map.removeLayer(layer);
@@ -2770,6 +3026,283 @@ function updateAreaButton(key){
   btn.disabled = !hasAny;
   btn.title = hasAny ? 'Calcular área de polígonos, comprimento de linhas e medidas dos pontos ligados'
                      : 'Disponível quando houver polígono/linha importada ou 2+ pontos ligados na tabela';
+  if(typeof updateVertexButton==='function') updateVertexButton(key);
+  // Painel de vértices aberto: atualiza a lista de camadas (inclusão/remoção)
+  if(document.getElementById('vtx-'+key)?.classList.contains('open')) buildVertexPanel(key);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  VÉRTICES DA CAMADA IMPORTADA — lista as coordenadas de cada vértice em
+//  UTM (SIRGAS 2000) e em latitude/longitude, com exportação CSV, cópia para
+//  planilha e marcação numerada dos vértices no mapa.
+// ════════════════════════════════════════════════════════════════════════
+const VTX_MAX_LINHAS = 3000;   // linhas exibidas no painel (o CSV leva todas)
+const VTX_MAX_MARCAS = 1500;   // vértices marcados no mapa
+const vtxState = {};           // por tela: {layerId, fuso, formato, rows, marks, mostrar}
+
+function updateVertexButton(key){
+  if(typeof updateDistButton==='function') updateDistButton(key);
+  const btn=document.getElementById('vtxBtn-'+key);
+  if(!btn) return;
+  const has=(uploadedLayers[key]||[]).length>0;
+  btn.disabled=!has;
+  btn.title=has ? 'Listar os vértices de uma camada importada em UTM e latitude/longitude'
+                : 'Disponível quando houver camada importada';
+  if(!has) closeVertexPopup(key);
+}
+
+function openVertexPopup(key){
+  const btn=document.getElementById('vtxBtn-'+key);
+  if(btn && btn.disabled) return;
+  if(typeof closeMeasurePopup==='function') closeMeasurePopup(key);
+  if(typeof closeAreaPopup==='function') closeAreaPopup(key);
+  if(typeof closeDistPopup==='function') closeDistPopup(key);
+  if(!vtxState[key]) vtxState[key]={layerId:null, fuso:'auto', formato:'dec', rows:[], marks:null, mostrar:true};
+  buildVertexPanel(key);
+  document.getElementById('vtx-'+key)?.classList.add('open');
+  btn?.classList.add('active');
+}
+function closeVertexPopup(key){
+  document.getElementById('vtx-'+key)?.classList.remove('open');
+  document.getElementById('vtxBtn-'+key)?.classList.remove('active');
+  clearVertexMarks(key);
+}
+
+function buildVertexPanel(key){
+  const panel=document.getElementById('vtx-'+key);
+  if(!panel) return;
+  const st=vtxState[key];
+  const camadas=uploadedLayers[key]||[];
+  if(st.layerId && !camadas.some(l=>l.id===st.layerId)){ st.layerId=null; st.rows=[]; clearVertexMarks(key); }
+  const icone=l=> l.hasPolygon ? '⬛' : (l.hasLine ? '➖' : '📍');
+  const opts=camadas.map(l=>`<button class="area-layer-btn${l.id===st.layerId?' active':''}" onclick="selectVertexLayer('${key}','${l.id}')"><span class="alb-icon">${icone(l)}</span><span class="alb-name">${escHtml(l.name)}</span></button>`).join('');
+  const fusos=[]; for(let z=18;z<=25;z++) fusos.push(z);
+  panel.innerHTML=`
+    <div class="measure-panel-hdr"><span>📍 Vértices da camada</span><span class="mp-close" title="Fechar" onclick="closeVertexPopup('${key}')">✕</span></div>
+    <div class="color-panel-section">
+      <div class="color-panel-lbl">Camadas importadas</div>
+      <div class="area-layer-list">${opts || '<div class="measure-hint">Nenhuma camada importada.</div>'}</div>
+    </div>
+    <div class="vtx-opts">
+      <label>Fuso UTM
+        <select onchange="setVertexOpt('${key}','fuso',this.value)">
+          <option value="auto"${st.fuso==='auto'?' selected':''}>Automático (por vértice)</option>
+          ${fusos.map(z=>`<option value="${z}"${String(st.fuso)===String(z)?' selected':''}>Forçar fuso ${z}</option>`).join('')}
+        </select>
+      </label>
+      <label>Lat/Long
+        <select onchange="setVertexOpt('${key}','formato',this.value)">
+          <option value="dec"${st.formato==='dec'?' selected':''}>Graus decimais</option>
+          <option value="gms"${st.formato==='gms'?' selected':''}>Graus, min., seg.</option>
+        </select>
+      </label>
+      <label class="vtx-chk"><input type="checkbox"${st.mostrar?' checked':''} onchange="setVertexOpt('${key}','mostrar',this.checked)"> Numerar no mapa</label>
+    </div>
+    <div id="vtx-body-${key}"><div class="measure-hint">Selecione uma camada acima para listar seus vértices (SIRGAS 2000).</div></div>`;
+  if(st.layerId) renderVertexTable(key);
+}
+
+function setVertexOpt(key, opt, val){
+  const st=vtxState[key]; if(!st) return;
+  st[opt]=val;
+  if(opt==='fuso' && st.layerId) st.rows=computeVertexRows(key, st.layerId);
+  if(st.layerId) renderVertexTable(key);
+}
+
+function selectVertexLayer(key, layerId){
+  const st=vtxState[key]; if(!st) return;
+  st.layerId=layerId;
+  st.rows=computeVertexRows(key, layerId);
+  document.querySelectorAll(`#vtx-${key} .area-layer-btn`).forEach(b=>{
+    b.classList.toggle('active', b.getAttribute('onclick').includes(`'${layerId}'`));
+  });
+  renderVertexTable(key);
+  // enquadra a camada
+  const entry=(uploadedLayers[key]||[]).find(l=>l.id===layerId);
+  try{ const b=entry.layer.getBounds(); if(b.isValid()) maps[key].fitBounds(b,{padding:[40,40]}); }catch(e){}
+}
+
+// UTM em um fuso específico (forçado) ou no fuso natural do vértice.
+function _utmVertice(lat, lon, fusoForcado){
+  if(fusoForcado==='auto' || !fusoForcado) return geoToUTM(lat, lon);
+  const zone=parseInt(fusoForcado,10), south=lat<0;
+  const [E,N]=proj4(geoProj, utmProj(zone,south), [lon,lat]);
+  return {E:+E.toFixed(2), N:+N.toFixed(2), zone, letter:utmLetter(lat)};
+}
+
+// Percorre a geometria e devolve a lista ordenada de vértices.
+// Polígonos: o vértice de fechamento (igual ao primeiro) não é repetido.
+function computeVertexRows(key, layerId){
+  const entry=(uploadedLayers[key]||[]).find(l=>l.id===layerId);
+  if(!entry || !entry.geojson) return [];
+  const st=vtxState[key]||{fuso:'auto'};
+  const rows=[]; let n=0;
+  const add=(c, feicao, parte)=>{
+    const lon=+c[0], lat=+c[1];
+    if(!isFinite(lat)||!isFinite(lon)) return;
+    const u=_utmVertice(lat, lon, st.fuso);
+    rows.push({n:++n, feicao, parte, lat, lon, zona:`${u.zone}${u.letter}`, E:u.E, N:u.N});
+  };
+  const anel=(ring, feicao, parte)=>{
+    if(!Array.isArray(ring)) return;
+    let pts=ring;
+    if(pts.length>1){
+      const a=pts[0], b=pts[pts.length-1];
+      if(a[0]===b[0] && a[1]===b[1]) pts=pts.slice(0,-1);
+    }
+    pts.forEach(c=>add(c, feicao, parte));
+  };
+  (entry.geojson.features||[]).forEach((f,fi)=>{
+    const g=f && f.geometry; if(!g) return;
+    const p=f.properties||{};
+    const nome=p.name||p.Name||p.NAME||p.nome||p.Nome||p.NOME||`Feição ${fi+1}`;
+    const feicao=String(nome);
+    switch(g.type){
+      case 'Point': add(g.coordinates, feicao, ''); break;
+      case 'MultiPoint': g.coordinates.forEach((c,i)=>add(c, feicao, g.coordinates.length>1?`Ponto ${i+1}`:'')); break;
+      case 'LineString': g.coordinates.forEach(c=>add(c, feicao, '')); break;
+      case 'MultiLineString': g.coordinates.forEach((ln,i)=>ln.forEach(c=>add(c, feicao, g.coordinates.length>1?`Parte ${i+1}`:''))); break;
+      case 'Polygon': g.coordinates.forEach((r,ri)=>anel(r, feicao, ri===0?'':`Furo ${ri}`)); break;
+      case 'MultiPolygon': g.coordinates.forEach((pol,pi)=>pol.forEach((r,ri)=>anel(r, feicao,
+          (g.coordinates.length>1?`Parte ${pi+1}`:'') + (ri>0?`${g.coordinates.length>1?' · ':''}Furo ${ri}`:'')))); break;
+    }
+  });
+  return rows;
+}
+
+// Formata latitude/longitude em graus decimais ou GMS (com hemisfério).
+function fmtLatLon(v, eixo, formato){
+  if(formato!=='gms') return v.toFixed(6).replace('.',',');
+  const hem = eixo==='lat' ? (v<0?'S':'N') : (v<0?'O':'L');
+  let a=Math.abs(v), g=Math.floor(a), mf=(a-g)*60, mi=Math.floor(mf), s=(mf-mi)*60;
+  if(s>=59.9995){ s=0; mi+=1; } if(mi>=60){ mi=0; g+=1; }
+  return `${g}°${String(mi).padStart(2,'0')}'${s.toFixed(3).padStart(6,'0').replace('.',',')}" ${hem}`;
+}
+const _fmtM = v => Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+function renderVertexTable(key){
+  const st=vtxState[key]; const body=document.getElementById('vtx-body-'+key);
+  if(!st || !body) return;
+  const entry=(uploadedLayers[key]||[]).find(l=>l.id===st.layerId);
+  const rows=st.rows||[];
+  if(!entry || !rows.length){ body.innerHTML='<div class="measure-hint">A camada selecionada não possui vértices.</div>'; clearVertexMarks(key); return; }
+  const feicoes=new Set(rows.map(r=>r.feicao+'|'+r.parte)).size;
+  const zonas=[...new Set(rows.map(r=>r.zona))];
+  // Fuso forçado muito distante da camada gera E fora da faixa útil do UTM
+  const foraFaixa=rows.some(r=>r.E<160000||r.E>840000);
+  const mostra=rows.slice(0, VTX_MAX_LINHAS);
+  const temParte=rows.some(r=>r.parte);
+  const linhas=mostra.map((r,i)=>`<tr data-i="${i}" onclick="focusVertex('${key}',${i})">
+      <td>${r.n}</td>
+      <td class="vtx-feat" title="${escHtml(r.feicao)}${r.parte?' · '+escHtml(r.parte):''}">${escHtml(r.feicao)}${temParte&&r.parte?`<span class="vtx-part">${escHtml(r.parte)}</span>`:''}</td>
+      <td>${fmtLatLon(r.lat,'lat',st.formato)}</td><td>${fmtLatLon(r.lon,'lon',st.formato)}</td>
+      <td>${escHtml(r.zona)}</td><td>${_fmtM(r.E)}</td><td>${_fmtM(r.N)}</td></tr>`).join('');
+  body.innerHTML=`
+    <div class="vtx-summary"><b>${rows.length.toLocaleString('pt-BR')}</b> vértice(s) em <b>${feicoes.toLocaleString('pt-BR')}</b> feição(ões)/parte(s) · fuso(s): <b>${zonas.join(', ')}</b>${zonas.length>1&&st.fuso==='auto'?' <span class="vtx-warn" title="A camada cruza mais de um fuso UTM. Para um memorial em fuso único, use a opção Forçar fuso.">⚠ mais de um fuso</span>':''}${foraFaixa?' <span class="vtx-warn" title="Há vértices com coordenada E fora da faixa válida do fuso (160.000–840.000 m). Escolha o fuso em que a camada está localizada.">⚠ E fora da faixa do fuso</span>':''}</div>
+    <div class="vtx-table-wrap"><table class="vtx-table">
+      <thead><tr><th>#</th><th>Feição</th><th>Latitude</th><th>Longitude</th><th>Fuso</th><th>E (m)</th><th>N (m)</th></tr></thead>
+      <tbody>${linhas}</tbody></table></div>
+    ${rows.length>VTX_MAX_LINHAS?`<div class="measure-hint">Exibindo os primeiros ${VTX_MAX_LINHAS.toLocaleString('pt-BR')} vértices. A exportação CSV inclui todos.</div>`:''}
+    <div class="measure-actions vtx-actions">
+      <button class="btn btn-sm" onclick="exportVertexCSV('${key}')" title="Baixar todos os vértices em planilha (CSV)">⬇ CSV</button>
+      <button class="btn btn-sm" onclick="copyVertexTable('${key}',this)" title="Copiar a tabela para colar no Excel/Planilhas">📋 Copiar</button>
+    </div>
+    <div class="measure-hint">Datum SIRGAS 2000. Clique em uma linha para localizar o vértice no mapa.</div>`;
+  drawVertexMarks(key);
+}
+
+function clearVertexMarks(key){
+  const st=vtxState[key];
+  if(st && st.marks){ try{ maps[key] && maps[key].removeLayer(st.marks); }catch(e){} st.marks=null; }
+  _vtxRestorePointColor(key);
+}
+// Enquanto os vértices de uma camada com PONTOS estão à mostra, o miolo dos
+// pontos dessa camada assume a cor do vértice (laranja); ao fechar a
+// ferramenta, trocar de camada ou ocultar os marcadores, volta à cor escolhida
+// pelo usuário para a camada.
+const VTX_COR = '#ff8c1a';
+function _vtxOverridePointColor(key, layerId){
+  const st=vtxState[key]; if(!st) return;
+  const entry=(uploadedLayers[key]||[]).find(l=>l.id===layerId);
+  if(!entry || !(entry.types||[]).includes('point')) return;
+  setGeoLayerDotColor(entry.layer, VTX_COR);
+  st.overrideLayerId=layerId;
+}
+function _vtxRestorePointColor(key){
+  const st=vtxState[key]; if(!st || !st.overrideLayerId) return;
+  const entry=(uploadedLayers[key]||[]).find(l=>l.id===st.overrideLayerId);
+  st.overrideLayerId=null;
+  if(entry) setGeoLayerDotColor(entry.layer, entry.dotColor || IMP_POINT_DOT_DEFAULT);
+}
+function _vtxOverrideActive(key, layerId){
+  const st=vtxState[key]; return !!(st && st.overrideLayerId===layerId);
+}
+function drawVertexMarks(key){
+  clearVertexMarks(key);
+  const st=vtxState[key], m=maps[key];
+  if(!st || !m || !st.mostrar || !st.rows.length) return;
+  const rows=st.rows.slice(0, VTX_MAX_MARCAS);
+  _vtxOverridePointColor(key, st.layerId);
+  const g=L.layerGroup();
+  const numerar=rows.length<=300; // rótulo fixo só quando legível
+  rows.forEach((r,i)=>{
+    const c=L.circleMarker([r.lat,r.lon],{radius:4, color:'#fff', weight:1.5, fillColor:VTX_COR, fillOpacity:1, pane:'impPointPane', interactive:true});
+    c.bindTooltip(`V${r.n}`, {permanent:numerar, direction:'top', offset:[0,-4], className:'vtx-label'});
+    c.on('click', ev=>{ L.DomEvent.stopPropagation(ev); focusVertex(key, i); });
+    g.addLayer(c);
+  });
+  g.addTo(m);
+  st.marks=g;
+}
+function focusVertex(key, i){
+  const st=vtxState[key], m=maps[key]; if(!st||!m) return;
+  const r=st.rows[i]; if(!r) return;
+  document.querySelectorAll(`#vtx-${key} .vtx-table tbody tr`).forEach(tr=>tr.classList.toggle('selected', +tr.dataset.i===i));
+  const tr=document.querySelector(`#vtx-${key} .vtx-table tbody tr[data-i="${i}"]`);
+  if(tr) tr.scrollIntoView({block:'nearest'});
+  m.setView([r.lat,r.lon], Math.max(m.getZoom(), 16));
+  L.popup({className:'rich-popup', closeButton:true, autoClose:true, offset:[0,-4]})
+    .setLatLng([r.lat,r.lon])
+    .setContent(`<div style="min-width:200px">
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid var(--border)">📍 Vértice ${r.n}</div>
+      <table style="border-collapse:collapse;width:100%;font-size:12px">
+        <tr><td style="color:var(--muted);padding:2px 10px 2px 0">Feição</td><td style="font-weight:500;overflow-wrap:anywhere">${escHtml(r.feicao)}${r.parte?' · '+escHtml(r.parte):''}</td></tr>
+        <tr><td style="color:var(--muted);padding:2px 10px 2px 0">Latitude</td><td style="font-weight:500">${fmtLatLon(r.lat,'lat',st.formato)}</td></tr>
+        <tr><td style="color:var(--muted);padding:2px 10px 2px 0">Longitude</td><td style="font-weight:500">${fmtLatLon(r.lon,'lon',st.formato)}</td></tr>
+        <tr><td style="color:var(--muted);padding:2px 10px 2px 0">Fuso</td><td style="font-weight:500">${escHtml(r.zona)}</td></tr>
+        <tr><td style="color:var(--muted);padding:2px 10px 2px 0">E (m)</td><td style="font-weight:500">${_fmtM(r.E)}</td></tr>
+        <tr><td style="color:var(--muted);padding:2px 10px 2px 0">N (m)</td><td style="font-weight:500">${_fmtM(r.N)}</td></tr>
+      </table></div>`)
+    .openOn(m);
+}
+
+// Matriz para exportação/cópia: números SEM separador de milhar (apenas a
+// vírgula decimal), para que Excel, LibreOffice e QGIS os leiam como número.
+function _vertexMatrix(key){
+  const st=vtxState[key];
+  const m2 = v => Number(v).toFixed(2).replace('.',',');
+  const cab=['Vertice','Feicao','Parte','Latitude','Longitude','Fuso','E (m)','N (m)'];
+  const lin=st.rows.map(r=>[r.n, r.feicao, r.parte, fmtLatLon(r.lat,'lat',st.formato), fmtLatLon(r.lon,'lon',st.formato), r.zona, m2(r.E), m2(r.N)]);
+  return [cab, ...lin];
+}
+function exportVertexCSV(key){
+  const st=vtxState[key]; if(!st||!st.rows.length) return;
+  const entry=(uploadedLayers[key]||[]).find(l=>l.id===st.layerId);
+  // CSV no padrão brasileiro (separador ";" e vírgula decimal) — abre direto no Excel
+  const esc=v=>{ const s=String(v==null?'':v); return /[;"\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; };
+  const csv='﻿'+_vertexMatrix(key).map(l=>l.map(esc).join(';')).join('\r\n');
+  const base=String(entry?entry.name:'camada').replace(/\.[a-z0-9]+$/i,'').replace(/[^\w\-]+/g,'_');
+  saveBlob(new Blob([csv],{type:'text/csv;charset=utf-8'}), `vertices_${base}.csv`);
+}
+async function copyVertexTable(key, btn){
+  const st=vtxState[key]; if(!st||!st.rows.length) return;
+  const tsv=_vertexMatrix(key).map(l=>l.join('\t')).join('\n');
+  try{ await navigator.clipboard.writeText(tsv); }
+  catch(e){
+    const ta=document.createElement('textarea'); ta.value=tsv; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); }catch(_){} ta.remove();
+  }
+  if(btn){ const t=btn.textContent; btn.textContent='✔ Copiado'; setTimeout(()=>{ btn.textContent=t; },1500); }
 }
 
 function bindGeoFeaturePopup(layer, feature, key){
@@ -2797,6 +3330,407 @@ function bindGeoFeaturePopup(layer, feature, key){
   // (clickHitsUploadedLayer), que aplica prioridade ponto > linha > polígono.
   // Não vinculamos um handler de clique por feição para evitar concorrência
   // entre camadas (que fazia o polígono sobrepor o popup de pontos/linhas).
+}
+
+// ════════════════════════════════════════
+//  DISTÂNCIA ENTRE PONTOS (botão "↔️ Distância entre pontos" do rodapé)
+// ════════════════════════════════════════
+// Para um conjunto de pontos (os pontos da tabela da tela ou as feições do tipo
+// ponto de uma camada importada), calcula entre TODOS os pares: a distância
+// mínima, a máxima e a média — e, como apoio, a média da distância de cada
+// ponto ao seu vizinho mais próximo. Usa EXATAMENTE a mesma métrica da
+// ferramenta "Medir" (distância do Leaflet: fórmula de Haversine sobre a esfera
+// de raio 6.371 km), para que os valores das duas ferramentas coincidam.
+// Pares de pontos coincidentes (mesma posição) são desconsiderados e
+// informados à parte.
+const DIST_MAX_PONTOS = 4000;      // até ~8 milhões de pares
+const DIST_COINCIDENTE_M = 0.01;   // abaixo disso, pontos considerados iguais
+const distState = {};              // por tela: {src, unit, res, layer}
+
+function _tablePointsFor(key){
+  const t = key==='conv' ? convData : key==='ext' ? extData : key==='inf' ? infData : [];
+  return (t||[]).filter(p=>p && isFinite(p.lat) && isFinite(p.lon))
+    .map((p,i)=>({lat:+p.lat, lon:+p.lon, nome:p.name||`Ponto ${i+1}`}));
+}
+function _layerPointsFor(entry){
+  const out=[];
+  (entry && entry.geojson && entry.geojson.features || []).forEach((f,fi)=>{
+    const g=f && f.geometry; if(!g) return;
+    const p=f.properties||{};
+    const nome=String(p.name||p.Name||p.NAME||p.nome||p.Nome||p.NOME||`Ponto ${fi+1}`);
+    const add=(c,suf)=>{ const lon=+c[0], lat=+c[1]; if(isFinite(lat)&&isFinite(lon)) out.push({lat,lon,nome:suf?`${nome} · ${suf}`:nome}); };
+    if(g.type==='Point') add(g.coordinates,'');
+    else if(g.type==='MultiPoint') (g.coordinates||[]).forEach((c,i,a)=>add(c, a.length>1?`parte ${i+1}`:''));
+  });
+  return out;
+}
+// Fontes disponíveis na tela: tabela + camadas importadas com pontos
+function _distSources(key){
+  const fontes=[];
+  const tab=_tablePointsFor(key);
+  if(tab.length) fontes.push({id:'__tabela', nome:'Pontos da tabela', icone:'📋', n:tab.length, pts:()=>_tablePointsFor(key)});
+  (uploadedLayers[key]||[]).forEach(l=>{
+    if(!(l.types||[]).includes('point')) return;
+    const n=_layerPointsFor(l).length;
+    if(n) fontes.push({id:l.id, nome:l.name, icone:'📍', n, pts:()=>_layerPointsFor(l)});
+  });
+  return fontes;
+}
+function updateDistButton(key){
+  const btn=document.getElementById('distBtn-'+key);
+  if(!btn) return;
+  const fontes=_distSources(key);
+  const ok=fontes.some(f=>f.n>=2);
+  btn.disabled=!ok;
+  btn.title = ok ? 'Distância mínima, máxima e média entre os pontos (tabela ou camada importada)'
+                 : 'Disponível quando houver ao menos 2 pontos (tabela ou camada importada)';
+  const panel=document.getElementById('dist-'+key);
+  if(!ok){ closeDistPopup(key); return; }
+  if(panel && panel.classList.contains('open')){
+    const st=distState[key];
+    // fonte removida ou com menos de 2 pontos: limpa a seleção
+    if(st && st.src && !fontes.some(f=>f.id===st.src && f.n>=2)){ st.src=null; st.res=null; _clearDistLayer(key); }
+    else if(st && st.src){ _computeDist(key); if(st.layer) _drawDistLayer(key, false); }
+    buildDistPanel(key);
+  }
+}
+function openDistPopup(key){
+  const btn=document.getElementById('distBtn-'+key);
+  if(btn && btn.disabled) return;
+  if(typeof closeMeasurePopup==='function') closeMeasurePopup(key);
+  if(typeof closeAreaPopup==='function') closeAreaPopup(key);
+  if(typeof closeVertexPopup==='function') closeVertexPopup(key);
+  if(!distState[key]) distState[key]={src:null, unit:'m', res:null, layer:null};
+  const st=distState[key];
+  const fontes=_distSources(key).filter(f=>f.n>=2);
+  // seleciona automaticamente quando há uma única fonte
+  if(!st.src && fontes.length===1) st.src=fontes[0].id;
+  if(st.src) _computeDist(key);
+  buildDistPanel(key);
+  document.getElementById('dist-'+key)?.classList.add('open');
+  btn?.classList.add('active');
+  if(st.res && st.tab!=='tabela') _drawDistLayer(key, false);
+}
+function closeDistPopup(key){
+  document.getElementById('dist-'+key)?.classList.remove('open');
+  document.getElementById('distBtn-'+key)?.classList.remove('active');
+  _clearDistLayer(key);
+  _clearDistRowLayer(key);
+}
+function selectDistSource(key, id){
+  const st=distState[key]; if(!st) return;
+  st.src=id;
+  _clearDistRowLayer(key);
+  _computeDist(key);
+  buildDistPanel(key);
+  if(st.tab!=='tabela') _drawDistLayer(key, true);
+  else { const lyr=(uploadedLayers[key]||[]).find(l=>l.id===id); try{ const b=lyr?lyr.layer.getBounds():null; if(b&&b.isValid()) maps[key].fitBounds(b,{padding:[40,40]}); }catch(e){} }
+}
+function setDistUnit(key, unit){
+  const st=distState[key]; if(!st) return;
+  st.unit = unit==='km' ? 'km' : 'm';
+  _clearDistRowLayer(key);
+  buildDistPanel(key);
+  if(st.layer) _drawDistLayer(key, false); // atualiza os rótulos das linhas
+}
+function _computeDist(key){
+  const st=distState[key]; if(!st) return;
+  const fonte=_distSources(key).find(f=>f.id===st.src);
+  if(!fonte){ st.res=null; st.sig=null; return; }
+  let pts=fonte.pts();
+  // evita recálculo quando os pontos não mudaram (o painel é atualizado a cada
+  // alteração na tela, p.ex. ao ligar pontos na coluna 🔗)
+  let sa=0, sb=0; for(const p of pts){ sa+=p.lat; sb+=p.lon; }
+  const assin=`${st.src}|${pts.length}|${sa.toFixed(9)}|${sb.toFixed(9)}`;
+  if(st.res && st.sig===assin) return;
+  st.sig=assin;
+  _clearDistRowLayer(key);
+  const total=pts.length, cortado=total>DIST_MAX_PONTOS;
+  if(cortado) pts=pts.slice(0, DIST_MAX_PONTOS);
+  const n=pts.length;
+  // Mesma fórmula de L.CRS.Earth.distance (usada por latlng.distanceTo no
+  // "Medir"), com senos/cossenos pré-calculados para acelerar os pares
+  const R=(L.CRS && L.CRS.Earth && L.CRS.Earth.R) || 6371000, rad=Math.PI/180;
+  const la=new Float64Array(n), lo=new Float64Array(n), cl=new Float64Array(n);
+  for(let i=0;i<n;i++){ la[i]=pts[i].lat; lo[i]=pts[i].lon; cl[i]=Math.cos(pts[i].lat*rad); }
+  const viz=new Float64Array(n).fill(Infinity), vizJ=new Int32Array(n).fill(-1);
+  let min=Infinity, max=-Infinity, soma=0, pares=0, coinc=0, iMin=-1, jMin=-1, iMax=-1, jMax=-1;
+  for(let i=0;i<n;i++){
+    for(let j=i+1;j<n;j++){
+      const s1=Math.sin((la[j]-la[i])*rad/2), s2=Math.sin((lo[j]-lo[i])*rad/2);
+      const a=s1*s1 + cl[i]*cl[j]*s2*s2;
+      const d=R*2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      if(d<DIST_COINCIDENTE_M){ coinc++; continue; }
+      pares++; soma+=d;
+      if(d<min){ min=d; iMin=i; jMin=j; }
+      if(d>max){ max=d; iMax=i; jMax=j; }
+      if(d<viz[i]){ viz[i]=d; vizJ[i]=j; }
+      if(d<viz[j]){ viz[j]=d; vizJ[j]=i; }
+    }
+  }
+  // Distância de cada ponto ao SEGUINTE da lista (1→2, 2→3, …)
+  const seq=new Float64Array(Math.max(0,n-1));
+  let somaSeq=0;
+  for(let i=0;i<n-1;i++){
+    const j=i+1;
+    const s1=Math.sin((la[j]-la[i])*rad/2), s2=Math.sin((lo[j]-lo[i])*rad/2);
+    const a=s1*s1 + cl[i]*cl[j]*s2*s2;
+    seq[i]=R*2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    somaSeq+=seq[i];
+  }
+  let somaViz=0, nViz=0;
+  for(let i=0;i<n;i++) if(isFinite(viz[i])){ somaViz+=viz[i]; nViz++; }
+  st.res = pares ? {
+    fonte:fonte.nome, n, total, cortado, pares, coinc,
+    min, max, media:soma/pares, mediaViz: nViz? somaViz/nViz : NaN,
+    pMin:[pts[iMin], pts[jMin]], iMin:[iMin+1, jMin+1],
+    pMax:[pts[iMax], pts[jMax]], iMax:[iMax+1, jMax+1],
+    pts, seq, somaSeq, viz, vizJ
+  } : {fonte:fonte.nome, n, total, cortado, pares:0, coinc};
+}
+function _fmtDist(m, unit){
+  if(!isFinite(m)) return '—';
+  return unit==='km'
+    ? (m/1000).toLocaleString('pt-BR',{minimumFractionDigits:3, maximumFractionDigits:3})+' km'
+    : m.toLocaleString('pt-BR',{minimumFractionDigits:2, maximumFractionDigits:2})+' m';
+}
+function buildDistPanel(key){
+  const panel=document.getElementById('dist-'+key); if(!panel) return;
+  const st=distState[key]||{src:null,unit:'m',res:null};
+  const fontes=_distSources(key);
+  const lista=fontes.map(f=>{
+    const ok=f.n>=2;
+    return `<button class="area-layer-btn${f.id===st.src?' active':''}"${ok?'':' disabled title="São necessários ao menos 2 pontos"'} onclick="selectDistSource('${key}','${f.id}')"><span class="alb-icon">${f.icone}</span><span class="alb-name">${escHtml(f.nome)} <span class="dist-n">(${f.n} ${f.n===1?'ponto':'pontos'})</span></span></button>`;
+  }).join('');
+  const r=st.res, u=st.unit;
+  const aba = st.tab==='tabela' ? 'tabela' : 'resumo';
+  panel.classList.toggle('dist-wide', aba==='tabela' && !!(r && r.pares));
+  let corpo='<div class="measure-hint">Selecione acima o conjunto de pontos.</div>';
+  if(r && !r.pares){
+    corpo=`<div class="measure-hint">Todos os ${r.n} pontos estão na mesma posição — não há distância a calcular.</div>`;
+  } else if(r && aba==='tabela'){
+    corpo=_distTabelaHtml(key, r, u);
+  } else if(r){
+    const par=(p,ix)=>`<span class="dist-par" title="${escHtml(p[0].nome)} ↔ ${escHtml(p[1].nome)}">#${ix[0]} ${escHtml(p[0].nome)} ↔ #${ix[1]} ${escHtml(p[1].nome)}</span>`;
+    corpo=`
+      <div class="dist-cards">
+        <div class="dist-card dist-min">
+          <div class="dist-card-top"><span>Distância mínima</span><button type="button" class="dist-ver" onclick="focusDistPair('${key}','min')" title="Mostrar o par no mapa">🔍 ver</button></div>
+          <b>${_fmtDist(r.min,u)}</b>${par(r.pMin,r.iMin)}
+        </div>
+        <div class="dist-card dist-max">
+          <div class="dist-card-top"><span>Distância máxima</span><button type="button" class="dist-ver" onclick="focusDistPair('${key}','max')" title="Mostrar o par no mapa">🔍 ver</button></div>
+          <b>${_fmtDist(r.max,u)}</b>${par(r.pMax,r.iMax)}
+        </div>
+        <div class="dist-card">
+          <div class="dist-card-top"><span>Distância média entre os pontos</span></div>
+          <b>${_fmtDist(r.media,u)}</b><span class="dist-par">média de ${r.pares.toLocaleString('pt-BR')} ${r.pares===1?'par':'pares'} de pontos</span>
+        </div>
+      </div>
+      <div class="dist-extra">Média até o vizinho mais próximo: <b>${_fmtDist(r.mediaViz,u)}</b></div>
+      <div class="measure-hint dist-nota">${r.n} pontos · mesmo cálculo da ferramenta Medir.${r.coinc?` ${r.coinc} ${r.coinc===1?'par de pontos coincidentes foi desconsiderado':'pares de pontos coincidentes foram desconsiderados'}.`:''}${r.cortado?` ⚠️ A camada tem ${r.total.toLocaleString('pt-BR')} pontos; o cálculo considera os ${DIST_MAX_PONTOS.toLocaleString('pt-BR')} primeiros.`:''}</div>
+      <div class="measure-actions"><button class="btn btn-sm" onclick="copyDistResult('${key}')">📋 Copiar resultado</button></div>`;
+  }
+  panel.innerHTML=`
+    <div class="measure-panel-hdr"><span>↔️ Distância entre pontos</span><span class="mp-close" title="Fechar" onclick="closeDistPopup('${key}')">✕</span></div>
+    <div class="color-panel-section">
+      <div class="color-panel-lbl">Pontos</div>
+      <div class="area-layer-list">${lista || '<div class="measure-hint">Nenhum ponto disponível.</div>'}</div>
+    </div>
+    <div class="color-panel-section">
+      <div class="color-panel-lbl">Unidade</div>
+      <div class="measure-type-row">
+        <button class="${u==='m'?'active':''}" onclick="setDistUnit('${key}','m')">Metros (m)</button>
+        <button class="${u==='km'?'active':''}" onclick="setDistUnit('${key}','km')">Quilômetros (km)</button>
+      </div>
+    </div>
+    ${r && r.pares ? `<div class="dist-tabs" role="tablist">
+      <button type="button" role="tab" aria-selected="${aba==='resumo'}" class="${aba==='resumo'?'active':''}" onclick="setDistTab('${key}','resumo')">📊 Resumo</button>
+      <button type="button" role="tab" aria-selected="${aba==='tabela'}" class="${aba==='tabela'?'active':''}" onclick="setDistTab('${key}','tabela')">📋 Tabela por ponto</button>
+    </div>` : ''}
+    ${corpo}`;
+}
+function setDistTab(key, tab){
+  const st=distState[key]; if(!st) return;
+  st.tab = tab==='tabela' ? 'tabela' : 'resumo';
+  buildDistPanel(key);
+  // cada aba destaca no mapa apenas o que mostra: Resumo → pares mín./máx.;
+  // Tabela → ligações do ponto clicado
+  if(st.tab==='resumo'){ _clearDistRowLayer(key); _drawDistLayer(key, false); }
+  else _clearDistLayer(key);
+}
+// Tabela por ponto: distância ao SEGUINTE da lista (12→13, 13→14…) e ao
+// VIZINHO MAIS PRÓXIMO (qualquer ponto do conjunto, exceto coincidentes)
+const DIST_TAB_MAX = 1500;  // linhas exibidas (o CSV leva todas)
+function _distTabelaHtml(key, r, u){
+  const lim=Math.min(r.n, DIST_TAB_MAX);
+  let linhas='';
+  for(let i=0;i<lim;i++){
+    const p=r.pts[i], j=r.vizJ[i];
+    const seg = i<r.n-1
+      ? `<span class="dt-ref">→ #${i+2}</span> ${_fmtDist(r.seq[i],u)}`
+      : '<span class="dt-ref">—</span>';
+    const viz = j>=0
+      ? `<span class="dt-ref" title="${escHtml(r.pts[j].nome)}">#${j+1}</span> ${_fmtDist(r.viz[i],u)}`
+      : '<span class="dt-ref" title="Só há pontos coincidentes">—</span>';
+    linhas+=`<tr data-i="${i}" onclick="focusDistRow('${key}',${i})" title="Clique para ver no mapa"><td>${i+1}</td><td class="dt-nome" title="${escHtml(p.nome)}">${escHtml(p.nome)}</td><td>${seg}</td><td>${viz}</td></tr>`;
+  }
+  return `
+    <div class="dist-tab-legend">
+      <span><i class="dt-sw dt-sw-seq"></i>Seguinte da lista (1→2, 2→3…)</span>
+      <span><i class="dt-sw dt-sw-viz"></i>Vizinho mais próximo</span>
+    </div>
+    <div class="vtx-table-wrap dist-table-wrap">
+      <table class="vtx-table dist-table">
+        <thead><tr><th>#</th><th>Ponto</th><th>Até o seguinte</th><th>Vizinho mais próximo</th></tr></thead>
+        <tbody>${linhas}</tbody>
+        <tfoot><tr><td colspan="2">Soma da sequência (1→${r.n})</td><td>${_fmtDist(r.somaSeq,u)}</td><td>média ${_fmtDist(r.mediaViz,u)}</td></tr></tfoot>
+      </table>
+    </div>
+    ${r.n>lim?`<div class="measure-hint">Exibindo ${lim.toLocaleString('pt-BR')} de ${r.n.toLocaleString('pt-BR')} pontos — o CSV contém todos.</div>`:''}
+    <div class="measure-actions">
+      <button class="btn btn-sm" onclick="exportDistCSV('${key}')">⬇ CSV</button>
+      <button class="btn btn-sm" onclick="copyDistTable('${key}')">📋 Copiar tabela</button>
+    </div>`;
+}
+// Destaca no mapa as ligações de um ponto da tabela
+function _clearDistRowLayer(key){
+  const st=distState[key];
+  if(st && st.rowLayer){ try{ maps[key] && maps[key].removeLayer(st.rowLayer); }catch(e){} st.rowLayer=null; }
+}
+function focusDistRow(key, i){
+  const st=distState[key], m=maps[key]; if(!st||!st.res||!st.res.pts||!m) return;
+  const r=st.res, p=r.pts[i]; if(!p) return;
+  _clearDistRowLayer(key);
+  document.querySelectorAll(`#dist-${key} .dist-table tbody tr`).forEach(tr=>tr.classList.toggle('selected', +tr.dataset.i===i));
+  const g=L.featureGroup(), pts=[[p.lat,p.lon]];
+  const seg=(q,cor,txt)=>{
+    const ll=[[p.lat,p.lon],[q.lat,q.lon]]; pts.push([q.lat,q.lon]);
+    L.polyline(ll,{color:'#fff', weight:6, opacity:.85, interactive:false}).addTo(g);
+    L.polyline(ll,{color:cor, weight:3, interactive:false}).bindTooltip(txt,{permanent:true, direction:'center', className:'dist-label'}).addTo(g);
+    L.circleMarker([q.lat,q.lon],{radius:5, color:'#fff', weight:2, fillColor:cor, fillOpacity:1, interactive:false}).addTo(g);
+  };
+  if(i<r.n-1) seg(r.pts[i+1],'#3b82f6',`#${i+1}→#${i+2} ${_fmtDist(r.seq[i],st.unit)}`);
+  const j=r.vizJ[i];
+  if(j>=0 && j!==i+1) seg(r.pts[j],'#2fb26b',`vizinho #${j+1} ${_fmtDist(r.viz[i],st.unit)}`);
+  else if(j===i+1) g.eachLayer(l=>{ if(l.getTooltip && l.getTooltip()) l.setTooltipContent(`#${i+1}→#${i+2} ${_fmtDist(r.seq[i],st.unit)} (vizinho mais próximo)`); });
+  L.circleMarker([p.lat,p.lon],{radius:7, color:'#fff', weight:2, fillColor:'#ffb020', fillOpacity:1, interactive:false})
+    .bindTooltip(`#${i+1} ${p.nome}`,{direction:'top', offset:[0,-6], className:'vtx-label'}).addTo(g);
+  g.addTo(m); st.rowLayer=g;
+  try{ m.fitBounds(L.latLngBounds(pts),{padding:[70,70], maxZoom:18}); }catch(e){}
+}
+function _distTabelaMatriz(key){
+  const st=distState[key]; if(!st||!st.res||!st.res.pts) return null;
+  const r=st.res, dec=(v,d)=>isFinite(v)?v.toFixed(d).replace('.',','):'';
+  const cab=['ponto','nome','latitude','longitude','seguinte','dist_seguinte_m','vizinho_mais_proximo','dist_vizinho_m'];
+  const linhas=r.pts.map((p,i)=>[i+1, p.nome, dec(p.lat,8), dec(p.lon,8),
+    i<r.n-1?i+2:'', i<r.n-1?dec(r.seq[i],2):'', r.vizJ[i]>=0?r.vizJ[i]+1:'', r.vizJ[i]>=0?dec(r.viz[i],2):'']);
+  return [cab, ...linhas];
+}
+function exportDistCSV(key){
+  const mtz=_distTabelaMatriz(key); if(!mtz) return;
+  const esc=v=>{ const s=String(v==null?'':v); return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; };
+  const csv='\uFEFF'+mtz.map(l=>l.map(esc).join(';')).join('\r\n');
+  const nome=String(distState[key].res.fonte||'pontos').replace(/\.[a-z0-9]+$/i,'').replace(/[^\w\-]+/g,'_').slice(0,60);
+  saveBlob(new Blob([csv],{type:'text/csv;charset=utf-8'}), `distancias_${nome}.csv`);
+}
+function copyDistTable(key){
+  const mtz=_distTabelaMatriz(key); if(!mtz) return;
+  const txt=mtz.map(l=>l.join('\t')).join('\n');
+  const btn=[...document.querySelectorAll(`#dist-${key} .measure-actions .btn`)].pop();
+  try{ navigator.clipboard.writeText(txt).then(()=>{ if(btn){ const t=btn.textContent; btn.textContent='✔ Copiado'; setTimeout(()=>btn.textContent=t,1400); } },()=>{}); }catch(e){}
+}
+// Linhas no mapa: par da distância mínima (verde) e da máxima (vermelho)
+function _clearDistLayer(key){
+  const st=distState[key];
+  if(st && st.layer){ try{ maps[key] && maps[key].removeLayer(st.layer); }catch(e){} st.layer=null; }
+}
+function _drawDistLayer(key, enquadrar){
+  _clearDistLayer(key);
+  const st=distState[key], m=maps[key];
+  if(!st || !m || !st.res || !st.res.pares) return;
+  const r=st.res, g=L.featureGroup();
+  const linha=(p,cor,txt)=>{
+    const ll=[[p[0].lat,p[0].lon],[p[1].lat,p[1].lon]];
+    L.polyline(ll,{color:'#fff', weight:6, opacity:.85, interactive:false}).addTo(g);
+    L.polyline(ll,{color:cor, weight:3, dashArray:'7 5', interactive:false})
+      .bindTooltip(txt,{permanent:true, direction:'center', className:'dist-label'}).addTo(g);
+    ll.forEach(c=>L.circleMarker(c,{radius:5, color:'#fff', weight:2, fillColor:cor, fillOpacity:1, interactive:false}).addTo(g));
+  };
+  linha(r.pMax,'#e5484d',`máx. ${_fmtDist(r.max, st.unit)}`);
+  linha(r.pMin,'#2fb26b',`mín. ${_fmtDist(r.min, st.unit)}`);
+  g.addTo(m);
+  st.layer=g;
+  if(enquadrar){ try{ m.fitBounds(g.getBounds(),{padding:[50,50], maxZoom:17}); }catch(e){} }
+}
+function focusDistPair(key, qual){
+  const st=distState[key], m=maps[key]; if(!st||!st.res||!m) return;
+  if(!st.layer) _drawDistLayer(key, false);
+  const p = qual==='min' ? st.res.pMin : st.res.pMax;
+  m.fitBounds(L.latLngBounds([[p[0].lat,p[0].lon],[p[1].lat,p[1].lon]]),{padding:[70,70], maxZoom:18});
+}
+function copyDistResult(key){
+  const st=distState[key]; if(!st||!st.res||!st.res.pares) return;
+  const r=st.res, u=st.unit;
+  const txt=[
+    `Distância entre pontos — ${r.fonte} (${r.n} pontos)`,
+    `Mínima: ${_fmtDist(r.min,u)} (#${r.iMin[0]} ${r.pMin[0].nome} ↔ #${r.iMin[1]} ${r.pMin[1].nome})`,
+    `Máxima: ${_fmtDist(r.max,u)} (#${r.iMax[0]} ${r.pMax[0].nome} ↔ #${r.iMax[1]} ${r.pMax[1].nome})`,
+    `Média entre os pontos: ${_fmtDist(r.media,u)} (${r.pares} pares)`,
+    `Média até o vizinho mais próximo: ${_fmtDist(r.mediaViz,u)}`
+  ].join('\n');
+  const btn=document.querySelector(`#dist-${key} .measure-actions .btn`);
+  const ok=()=>{ if(btn){ const t=btn.textContent; btn.textContent='✔ Copiado'; setTimeout(()=>btn.textContent=t,1400); } };
+  try{ navigator.clipboard.writeText(txt).then(ok, ()=>{}); }catch(e){}
+}
+
+// Símbolo das feições do tipo PONTO importadas: anel na cor da camada (preto
+// por padrão) com um miolo de borda branca (preto por padrão; laranja enquanto
+// a ferramenta Vértices exibe a camada) para destacar a posição exata. O miolo acompanha o ponto ao ligar/desligar a
+// camada, removê-la ou movê-la; a cor da camada continua no anel externo.
+// O miolo pode ter a cor alterada por camada (seletor redondo no painel
+// "Camadas importadas"); o padrão é o preto, como o anel externo, separados
+// pelas bordas brancas. Os marcadores da ferramenta
+// Vértices não são afetados — continuam sempre laranja.
+const IMP_POINT_DOT_DEFAULT = '#000000';   // miolo: preto (padrão)
+const IMP_POINT_RING_DEFAULT = '#000000';  // contorno (anel) das camadas de pontos: preto
+const IMP_POINT_DOT = {radius:3.5, color:'#ffffff', weight:1.5, fillColor:IMP_POINT_DOT_DEFAULT, fillOpacity:1};
+const ImpPointMarker = L.CircleMarker.extend({
+  onAdd(map){
+    L.CircleMarker.prototype.onAdd.call(this, map);
+    if(!this._dot){
+      this._dot = L.circleMarker(this._latlng, Object.assign({}, IMP_POINT_DOT, {
+        fillColor:this.options.dotColor || IMP_POINT_DOT_DEFAULT,
+        pane:this.options.pane, renderer:this.options.renderer, interactive:false, bubblingMouseEvents:false
+      }));
+    }
+    this._dot.addTo(map);
+  },
+  onRemove(map){
+    if(this._dot) map.removeLayer(this._dot);
+    L.CircleMarker.prototype.onRemove.call(this, map);
+  },
+  setLatLng(ll){
+    L.CircleMarker.prototype.setLatLng.call(this, ll);
+    if(this._dot) this._dot.setLatLng(ll);
+    return this;
+  },
+  bringToFront(){
+    L.CircleMarker.prototype.bringToFront.call(this);
+    if(this._dot && this._dot._map) this._dot.bringToFront();
+    return this;
+  }
+});
+
+// Altera a cor do miolo de todos os pontos de uma camada importada
+function setGeoLayerDotColor(layer, color){
+  color = color || IMP_POINT_DOT_DEFAULT;
+  layer.eachLayer(sub=>{
+    if(sub instanceof ImpPointMarker){
+      sub.options.dotColor = color;
+      if(sub._dot) sub._dot.setStyle({fillColor:color});
+    }
+  });
 }
 
 // Reaplica a cor a uma camada GeoJSON importada, preservando o estilo
@@ -2891,7 +3825,8 @@ function addGeoJSONToMap(key, geojson, name, map, layersControl){
     if(!grupos[t].length) return;
     const sub = { type:'FeatureCollection', features: grupos[t] };
     const nome = `${base} — ${rotulos[t]}${ext}`;
-    const cor = (t === 'polygon' && corNomeada) ? corNomeada : nextColor(key);
+    const cor = t === 'point' ? IMP_POINT_RING_DEFAULT
+              : (t === 'polygon' && corNomeada) ? corNomeada : nextColor(key);
     const lyr = addGeoJSONLayerSingle(key, sub, nome, map, layersControl, {color:cor, skipFit:true});
     if(lyr) criadas.push(lyr);
   });
@@ -2913,7 +3848,6 @@ function addGeoJSONToMap(key, geojson, name, map, layersControl){
 //       { skipFit } não enquadra o mapa (o enquadramento é feito pelo chamador)
 function addGeoJSONLayerSingle(key, geojson, name, map, layersControl, opts){
   opts = opts || {};
-  const color = opts.color || nextColor(key);
   // Determina a tipologia predominante da coleção para escolher o pane
   // (prioridade de clique: ponto > linha > polígono).
   const tset = new Set();
@@ -2923,6 +3857,9 @@ function addGeoJSONLayerSingle(key, geojson, name, map, layersControl, opts){
     else if(t==='LineString'||t==='MultiLineString') tset.add('line');
     else if(t==='Polygon'||t==='MultiPolygon') tset.add('polygon');
   });
+  // Camadas só de pontos: contorno preto por padrão (alterável no seletor)
+  const soPontos = tset.size===1 && tset.has('point');
+  const color = soPontos ? IMP_POINT_RING_DEFAULT : (opts.color || nextColor(key));
   const paneFor = gt => {
     if(gt==='Point'||gt==='MultiPoint') return 'impPointPane';
     if(gt==='LineString'||gt==='MultiLineString') return 'impLinePane';
@@ -2940,9 +3877,14 @@ function addGeoJSONLayerSingle(key, geojson, name, map, layersControl, opts){
       if(t==='LineString'||t==='MultiLineString'){
         return {color, weight:3.5, opacity:1, fill:false, pane:'impLinePane', renderer:R.impLinePane, interactive:false};
       }
+      if(t==='Point'||t==='MultiPoint'){
+        // o estilo do GeoJSON também é aplicado aos pontos: mantém o anel cheio
+        // na cor da camada com a borda (sombreamento) branca
+        return {color:'#ffffff', weight:1.5, opacity:1, fillColor:color, fillOpacity:1, pane:'impPointPane', renderer:R.impPointPane, interactive:false};
+      }
       return {color, weight:2.5, fillOpacity:0.12, fillColor:color, pane:'impPolygonPane', renderer:R.impPolygonPane, interactive:false};
     },
-    pointToLayer: (f, latlng) => L.circleMarker(latlng, {radius:6, color:'#ffffff', weight:1.5, fillColor:color, fillOpacity:1, pane:'impPointPane', renderer:R.impPointPane, interactive:false}),
+    pointToLayer: (f, latlng) => new ImpPointMarker(latlng, {radius:7, color:'#ffffff', weight:1.5, fillColor:color, fillOpacity:1, pane:'impPointPane', renderer:R.impPointPane, interactive:false}),
     onEachFeature: (feature, layer) => bindGeoFeaturePopup(layer, feature, key)
   });
   layer.addTo(map);
@@ -3839,6 +4781,24 @@ function openWayback(key){
 }
 
 // Exibe um modal com informações sobre o sistema de referência (EPSG) usado.
+// Seção "Coordenadas exibidas" do popup EPSG, conforme o formato do rodapé
+function _epsgSecaoExibidas(key){
+  if(coordFmt==='geo') return `<table class="epsg-table">
+          <tr><td>Código</td><td><b>EPSG:4326</b></td></tr>
+          <tr><td>Nome</td><td>WGS 84 (World Geodetic System 1984)</td></tr>
+          <tr><td>Tipo</td><td>Geográfico (latitude / longitude)</td></tr>
+          <tr><td>Unidade</td><td>Graus decimais</td></tr>
+        </table>`;
+  const ll=_lastCoordLL[key] || (maps[key] ? maps[key].getCenter() : L.latLng(-15.8,-47.9));
+  const u=_utmInfo(ll.lat, ll.lng);
+  return `<table class="epsg-table">
+          <tr><td>Código</td><td><b>${u.epsg?'EPSG:'+u.epsg:'—'}</b></td></tr>
+          <tr><td>Nome</td><td>SIRGAS 2000 / UTM zone ${u.zone}${u.south?'S':'N'}</td></tr>
+          <tr><td>Tipo</td><td>Projetado (UTM — Universal Transversa de Mercator)</td></tr>
+          <tr><td>Unidade</td><td>Metros (E, N)</td></tr>
+          <tr><td>Fuso</td><td>Automático: o do ponto sob o cursor (atual: ${u.zone}${u.letter})</td></tr>
+        </table>`;
+}
 function openEpsgPopup(key){
   const old = document.getElementById('epsg-modal');
   if(old) old.remove();
@@ -3853,12 +4813,7 @@ function openEpsgPopup(key){
       </div>
       <div class="track-sec">
         <div class="track-sec-lbl">Coordenadas exibidas</div>
-        <table class="epsg-table">
-          <tr><td>Código</td><td><b>EPSG:4326</b></td></tr>
-          <tr><td>Nome</td><td>WGS 84 (World Geodetic System 1984)</td></tr>
-          <tr><td>Tipo</td><td>Geográfico (latitude / longitude)</td></tr>
-          <tr><td>Unidade</td><td>Graus decimais</td></tr>
-        </table>
+        ${_epsgSecaoExibidas(key)}
       </div>
       <div class="track-sec">
         <div class="track-sec-lbl">Projeção do mapa base</div>
@@ -4228,6 +5183,7 @@ function toggleExportMenu(ev, key, fname){
     <button type="button" onclick="doExport('${key}','${fname}','kml')">📄 KML (.kml)</button>
     <button type="button" onclick="doExport('${key}','${fname}','shp')">🗂️ Shapefile (.zip)</button>
     <button type="button" onclick="doExport('${key}','${fname}','geojson')">🌐 GeoJSON (.geojson)</button>
+    <button type="button" onclick="doExport('${key}','${fname}','csv')">📊 Planilha CSV (.csv)</button>
   `;
   menu.classList.add('open');
 }
@@ -4239,6 +5195,32 @@ function doExport(key, fname, fmt){
   if(fmt==='kml')      downloadKML(data, fname);
   else if(fmt==='shp') downloadSHP(data, fname);
   else if(fmt==='geojson') downloadGeoJSON(data, fname);
+  else if(fmt==='csv') downloadPointsCSV(data, fname, key);
+}
+// CSV no padrão brasileiro (separador ";", vírgula decimal, UTF-8 com BOM):
+// abre direto no Excel/LibreOffice e pode ser reimportado no próprio CheckLic
+// (botão "Importar arquivo geoespacial"). Inclui lat/long, UTM e — nas fotos —
+// altitude, data/hora e a origem da coordenada.
+function downloadPointsCSV(data, fname, key){
+  if(!data||!data.length){alert('Nenhum ponto para exportar.');return;}
+  const dec=(v,d)=> (v===''||v==null||!isFinite(+v)) ? '' : Number(v).toFixed(d).replace('.',',');
+  const esc=v=>{ const s=String(v==null?'':v); return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; };
+  const fotos = key==='ext';
+  const cab=['nome','latitude','longitude','zona_utm','utm_e','utm_n'];
+  if(fotos) cab.push('altitude_m','data_hora','origem_coordenada');
+  const origemTxt={exif:'GPS (metadados)', ocr:'Texto impresso na foto', editado:'Editado manualmente'};
+  const linhas=data.map((p,i)=>{
+    let E=p.E, N=p.N, zona=p.zona;
+    if(!isFinite(+E)||!isFinite(+N)||!zona){ const u=geoToUTM(p.lat,p.lon); E=u.E; N=u.N; zona=`${u.zone}${u.letter}`; }
+    const l=[p.name||('Ponto '+(i+1)), dec(p.lat,8), dec(p.lon,8), zona, dec(E,2), dec(N,2)];
+    if(fotos){
+      const origem = p.editado ? origemTxt.editado : (origemTxt[p.origem] || (p.origem?p.origem:'Arquivo importado'));
+      l.push(p.alt!==''&&p.alt!=null ? dec(p.alt,1) : '', p.dtFmt||'', origem);
+    }
+    return l;
+  });
+  const csv='\uFEFF'+[cab,...linhas].map(l=>l.map(esc).join(';')).join('\r\n');
+  saveBlob(new Blob([csv],{type:'text/csv;charset=utf-8'}), fname+'.csv');
 }
 function downloadGeoJSON(data, fname){
   if(!data||!data.length){alert('Nenhum ponto para exportar.');return;}
@@ -4355,7 +5337,7 @@ function convConvert(){
     const L=document.getElementById(`conv-l-${i}`).value||'K';
     if(isNaN(E)||isNaN(N)||!Z)continue;
     const geo=utmToGeo(E,N,Z,L);if(!geo)continue;
-    found++;convData.push({name:`Ponto ${found}`,lat:geo.lat,lon:geo.lon});
+    found++;convData.push({name:`Ponto ${found}`,lat:geo.lat,lon:geo.lon,E,N,zona:`${Z}${L}`});
     const tr=document.createElement('tr');tr.dataset.idx=found-1;
     tr.innerHTML=`<td class="td-link"><input type="checkbox" class="pt-link-cb" title="Ligar este ponto" onclick="event.stopPropagation()" onchange="togglePointLink('conv',${found-1},this)"></td><td>${found}</td><td><span class="zona-pill">${Z}${L}</span></td><td>${coordCell(geo.lat)}</td><td>${coordCell(geo.lon)}</td>`;
     document.getElementById('conv-tbody').appendChild(tr);
@@ -4368,7 +5350,7 @@ function convConvert(){
   buildMap('map-conv','conv');
   setTimeout(()=>{
     clearMarkers('conv');const bounds=[];
-    convData.forEach((p,i)=>{addMarker('conv',p.lat,p.lon,p.name,i+1);bounds.push([p.lat,p.lon]);});
+    convData.forEach((p,i)=>{addMarker('conv',p.lat,p.lon,p.name,i+1,{zona:p.zona,E:p.E,N:p.N});bounds.push([p.lat,p.lon]);});
     fitMap('conv',bounds);
     document.querySelectorAll('#conv-tbody tr').forEach(tr=>{
       tr.addEventListener('click',()=>{
@@ -4470,50 +5452,419 @@ function readEntry(entry){
   });
 }
 
-const IMG_EXT=/\.(jpe?g|tiff?|heic|heif|webp)$/i;
+const IMG_EXT=/\.(jpe?g|tiff?|heic|heif|webp|png)$/i;
 async function handleExtFiles(files){
   const imgs=Array.from(files).filter(f=>IMG_EXT.test(f.name));
   if(!imgs.length){alert('Nenhuma imagem suportada encontrada.');return;}
   extData=[];resetPointLink('ext');clearMarkers('ext');
   const pw=document.getElementById('ext-progress'),pf=document.getElementById('ext-fill'),pl=document.getElementById('ext-label');
-  pw.style.display='block';let withGPS=0,withoutGPS=0;
-  for(let i=0;i<imgs.length;i++){
-    pf.style.width=`${Math.round((i/imgs.length)*100)}%`;
-    pl.textContent=`Processando ${i+1} de ${imgs.length}: ${imgs[i].name}`;
-    const row=await readGPS(imgs[i]);
-    if(row){extData.push(row);withGPS++;}else withoutGPS++;
+  pw.style.display='block';let withGPS=0,withoutGPS=0,viaOCR=0;
+  const ocrState={failed:false, warned:false};
+  try{
+    for(let i=0;i<imgs.length;i++){
+      pf.style.width=`${Math.round((i/imgs.length)*100)}%`;
+      const base=`Processando ${i+1} de ${imgs.length}: ${imgs[i].name}`;
+      pl.textContent=base;
+      let row=null;
+      try{
+        row=await readGPS(imgs[i], msg=>{ pl.textContent=`${base} — ${msg}`; }, ocrState);
+      }catch(err){
+        console.warn('[GeoTools] Falha ao processar', imgs[i].name, err);
+        row=null;
+      }
+      if(row){extData.push(row);withGPS++;if(row.origem==='ocr')viaOCR++;}else withoutGPS++;
+    }
+  }finally{
+    // Libera o leitor de texto (OCR) ao final do lote para devolver memória
+    terminateOcrWorker();
   }
   pf.style.width='100%';pl.textContent='✔ Concluído';
-  setTimeout(()=>{pw.style.display='none';showExtResults(withGPS,withoutGPS);},700);
+  if(ocrState.failed && withoutGPS){
+    setTimeout(()=>alert('Algumas fotos não têm GPS nos metadados e o leitor de texto (OCR) não pôde ser carregado para ler as coordenadas impressas na imagem.\n\nVerifique a conexão com a internet (o leitor é baixado de cdn.jsdelivr.net na primeira utilização) e tente novamente.'),750);
+  }
+  setTimeout(()=>{pw.style.display='none';showExtResults(withGPS,withoutGPS,viaOCR);},700);
 }
-function readGPS(file){
+
+// Lê a posição da foto: 1º pelos metadados EXIF (GPS); se não houver, tenta
+// ler as coordenadas IMPRESSAS na imagem (carimbo de apps como TimePhoto,
+// Timestamp Camera, GPS Map Camera, NoteCam…) por reconhecimento de texto.
+async function readGPS(file, onStatus, ocrState){
+  let row=null;
+  try{ row=await withTimeout(readExifGPS(file), 10000, null); }
+  catch(e){ console.warn('[GeoTools] EXIF ilegível em', file.name, e); row=null; }
+  if(row) return row;
+  if(ocrState && ocrState.failed) return null; // OCR indisponível nesta sessão
+  try{
+    const r=await readStampGPS(file, onStatus);
+    if(r) r.file=file; // referência ao arquivo para conferência visual no editor
+    return r;
+  }catch(e){
+    console.warn('[GeoTools] OCR indisponível/falhou para', file.name, e);
+    if(ocrState && e && e.ocrLoadFailed) ocrState.failed=true;
+    return null;
+  }
+}
+
+function withTimeout(promise, ms, fallback){
   return new Promise(resolve=>{
-    const img=new Image(),url=URL.createObjectURL(file);
-    img.onload=()=>{
-      EXIF.getData(img,function(){
-        const ld=EXIF.getTag(this,'GPSLatitude'),lr=EXIF.getTag(this,'GPSLatitudeRef');
-        const od=EXIF.getTag(this,'GPSLongitude'),or=EXIF.getTag(this,'GPSLongitudeRef');
-        const ar=EXIF.getTag(this,'GPSAltitude'),aref=EXIF.getTag(this,'GPSAltitudeRef');
-        const dt=EXIF.getTag(this,'DateTimeOriginal')||EXIF.getTag(this,'DateTime')||'';
-        URL.revokeObjectURL(url);
+    let done=false;
+    const t=setTimeout(()=>{ if(!done){ done=true; resolve(fallback); } }, ms);
+    promise.then(v=>{ if(!done){ done=true; clearTimeout(t); resolve(v); } },
+                 ()=>{ if(!done){ done=true; clearTimeout(t); resolve(fallback); } });
+  });
+}
+
+// Leitura do GPS pelos metadados EXIF. Usa a leitura direta do arquivo binário
+// (síncrona e protegida por try/catch): erros internos da biblioteca EXIF em
+// arquivos atípicos não podem mais deixar o processamento "travado".
+function readExifGPS(file){
+  return new Promise(resolve=>{
+    if(!/\.(jpe?g)$/i.test(file.name) && file.type!=='image/jpeg'){ resolve(null); return; }
+    const fr=new FileReader();
+    fr.onerror=()=>resolve(null);
+    fr.onload=()=>{
+      try{
+        const tags=EXIF.readFromBinaryFile(fr.result)||{};
+        const ld=tags.GPSLatitude, lr=tags.GPSLatitudeRef;
+        const od=tags.GPSLongitude, or=tags.GPSLongitudeRef;
+        const ar=tags.GPSAltitude, aref=tags.GPSAltitudeRef;
+        const dt=tags.DateTimeOriginal||tags.DateTime||'';
         if(!ld||!od){resolve(null);return;}
         const lat=dms2dec(ld,lr),lon=dms2dec(od,or);
-        if(lat===null||lon===null){resolve(null);return;}
+        if(lat===null||lon===null||!isFinite(lat)||!isFinite(lon)||(lat===0&&lon===0)){resolve(null);return;}
         const utm=geoToUTM(lat,lon);
-        let alt='';if(ar!==undefined){const v=typeof ar==='object'?ar.numerator/ar.denominator:Number(ar);alt=(aref===1?-v:v).toFixed(1);}
+        let alt='';if(ar!==undefined){const v=typeof ar==='object'?ar.numerator/ar.denominator:Number(ar);if(isFinite(v))alt=(aref===1?-v:v).toFixed(1);}
         let dtFmt='';
         if(dt){
           // EXIF format: "YYYY:MM:DD HH:MM:SS"
-          const m=String(dt).match(/(\d{4}):(\d{2}):(\d{2})\s+(\d{2}):(\d{2})/);
+          const m=String(dt).match(/(\d{4}):(\d{2}):(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?/);
           if(m) dtFmt=`${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}:${m[6]||'00'}`;
           else dtFmt=String(dt).substring(0,16);
         }
-        resolve({name:file.name,lat,lon,E:utm.E,N:utm.N,zona:`${utm.zone}${utm.letter}`,alt,dtFmt});
-      });
+        resolve({name:file.name,lat,lon,E:utm.E,N:utm.N,zona:`${utm.zone}${utm.letter}`,alt,dtFmt,origem:'exif'});
+      }catch(e){
+        console.warn('[GeoTools] Erro ao ler EXIF de', file.name, e);
+        resolve(null);
+      }
     };
-    img.onerror=()=>{URL.revokeObjectURL(url);resolve(null);};
-    img.src=url;
+    fr.readAsArrayBuffer(file);
   });
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  OCR — coordenadas impressas na imagem
+//  O leitor (Tesseract.js) é carregado sob demanda, somente quando alguma
+//  foto não tem GPS nos metadados. Todo o reconhecimento roda NO NAVEGADOR:
+//  a foto não é enviada a nenhum servidor (apenas o programa de leitura e o
+//  modelo de idioma são baixados do CDN na primeira utilização).
+// ══════════════════════════════════════════════════════════════════════
+const OCR_CFG = {
+  lib:  'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',
+  worker:'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',
+  core: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1',
+  lang: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int',
+};
+let _ocrWorkerPromise=null;
+function loadScriptOnce(src){
+  return new Promise((resolve,reject)=>{
+    if(document.querySelector(`script[data-src="${src}"]`)){
+      if(window.Tesseract) resolve(); else
+      document.querySelector(`script[data-src="${src}"]`).addEventListener('load',()=>resolve(),{once:true});
+      return;
+    }
+    const s=document.createElement('script');
+    s.src=src; s.async=true; s.dataset.src=src;
+    s.onload=()=>resolve();
+    s.onerror=()=>{ s.remove(); reject(new Error('Falha ao carregar '+src)); };
+    document.head.appendChild(s);
+  });
+}
+function getOcrWorker(onStatus){
+  if(!_ocrWorkerPromise){
+    _ocrWorkerPromise=(async()=>{
+      if(onStatus) onStatus('carregando o leitor de texto (primeira vez pode levar alguns segundos)…');
+      try{
+        if(!window.Tesseract) await loadScriptOnce(OCR_CFG.lib);
+        const w=await Tesseract.createWorker('eng', 1, {
+          workerPath:OCR_CFG.worker, corePath:OCR_CFG.core, langPath:OCR_CFG.lang,
+        });
+        await w.setParameters({ preserve_interword_spaces:'1' });
+        return w;
+      }catch(e){
+        const err=new Error('Leitor de texto (OCR) indisponível: '+(e&&e.message||e));
+        err.ocrLoadFailed=true;
+        throw err;
+      }
+    })();
+    _ocrWorkerPromise.catch(()=>{ _ocrWorkerPromise=null; });
+  }
+  return _ocrWorkerPromise;
+}
+function terminateOcrWorker(){
+  const p=_ocrWorkerPromise; _ocrWorkerPromise=null;
+  if(p) p.then(w=>{ try{ w.terminate(); }catch(e){} }).catch(()=>{});
+}
+
+// Recorta uma faixa da imagem e devolve um canvas pronto para o OCR.
+//  mode 'white': isola o texto claro e pouco saturado (carimbo branco com
+//               sombra) → texto preto sobre fundo branco;
+//  mode 'gray' : escala de cinza com contraste reforçado (carimbos coloridos).
+function stampCanvas(bitmap, region, mode, opts){
+  opts = opts || {};
+  const W=bitmap.width, H=bitmap.height;
+  const sx=Math.round(region.x*W), sy=Math.round(region.y*H);
+  const sw=Math.max(1,Math.round(region.w*W)), sh=Math.max(1,Math.round(region.h*H));
+  const scale=(opts.scale||1)*Math.min(1, 1900/sw);
+  const pad=opts.pad||0;
+  const cw=Math.max(1,Math.round(sw*scale)), ch=Math.max(1,Math.round(sh*scale));
+  const c=document.createElement('canvas'); c.width=cw+2*pad; c.height=ch+2*pad;
+  const ctx=c.getContext('2d',{willReadFrequently:true});
+  ctx.fillStyle = mode==='white' ? '#000' : '#fff'; // borda neutra (vira branco após binarizar)
+  ctx.fillRect(0,0,c.width,c.height);
+  ctx.drawImage(bitmap, sx, sy, sw, sh, pad, pad, cw, ch);
+  const img=ctx.getImageData(0,0,c.width,c.height), d=img.data;
+  if(mode==='white'){
+    const Wc=c.width, Hc=c.height, M=new Uint8Array(Wc*Hc);
+    for(let i=0,j=0;i<d.length;i+=4,j++){
+      const r=d[i],g=d[i+1],b=d[i+2];
+      const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+      M[j] = (mn>=200 && (mx-mn)<=45) ? 1 : 0;
+    }
+    if(opts.despeckle){ // remove pontos isolados (reflexos, folhagem clara)
+      const M2=M.slice();
+      for(let y=1;y<Hc-1;y++) for(let x=1;x<Wc-1;x++){
+        const k=y*Wc+x; if(!M[k]) continue;
+        const n=M[k-Wc-1]+M[k-Wc]+M[k-Wc+1]+M[k-1]+M[k+1]+M[k+Wc-1]+M[k+Wc]+M[k+Wc+1];
+        if(n<3) M2[k]=0;
+      }
+      M.set(M2);
+    }
+    for(let i=0,j=0;i<d.length;i+=4,j++){
+      const v = M[j]?0:255;
+      d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
+    }
+  } else {
+    let lo=255,hi=0; const L=new Uint8ClampedArray(d.length/4);
+    for(let i=0,j=0;i<d.length;i+=4,j++){
+      const v=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]; L[j]=v;
+      if(v<lo)lo=v; if(v>hi)hi=v;
+    }
+    const span=Math.max(1,hi-lo);
+    for(let i=0,j=0;i<d.length;i+=4,j++){
+      const v=255-Math.round((L[j]-lo)*255/span); // inverte: texto claro vira escuro
+      d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
+    }
+  }
+  ctx.putImageData(img,0,0);
+  return c;
+}
+
+// Valor mais frequente de uma lista (empate → o primeiro que apareceu).
+function _maisFrequente(vals){
+  const cont=new Map();
+  vals.forEach(v=>{ if(v!==''&&v!=null) cont.set(v,(cont.get(v)||0)+1); });
+  let melhor=null, n=0;
+  for(const [v,c] of cont){ if(c>n){ melhor=v; n=c; } }
+  return {valor:melhor, votos:n};
+}
+
+async function readStampGPS(file, onStatus){
+  let bitmap;
+  try{ bitmap=await createImageBitmap(file); }
+  catch(e){ return null; } // formato que o navegador não decodifica (ex.: HEIC no Chrome)
+  const worker=await getOcrWorker(onStatus);
+  if(onStatus) onStatus('sem GPS nos metadados · lendo coordenadas impressas na foto…');
+  const ler = async (reg, mode, opts, psm)=>{
+    await worker.setParameters({tessedit_pageseg_mode: psm||'3'});
+    const {data}=await worker.recognize(stampCanvas(bitmap, reg, mode, opts));
+    return data||{};
+  };
+  // Regiões onde os apps de carimbo costumam escrever (parte inferior é a
+  // mais comum; depois o topo; por fim a imagem inteira reduzida).
+  const tentativas=[
+    {r:{x:0,y:0.58,w:1,h:0.42}, mode:'white'},
+    {r:{x:0,y:0.58,w:1,h:0.42}, mode:'gray'},
+    {r:{x:0,y:0,   w:1,h:0.35}, mode:'white'},
+    {r:{x:0,y:0,   w:1,h:1   }, mode:'gray'},
+  ];
+  try{
+    for(const t of tentativas){
+      const data=await ler(t.r, t.mode, {}, '3');
+      const p1=parseStampText(data.text||'');
+      if(!p1) continue;
+      console.info(`[GeoTools] OCR "${file.name}" (${t.mode}):`, JSON.stringify((data.text||'').trim()));
+
+      // ── Confirmação por novas leituras ──
+      // O reconhecimento pode trocar dígitos isolados (1↔7, 3↔8…). Por isso o
+      // carimbo é relido em um recorte justo, com pré-processamentos
+      // diferentes, e cada campo (zona, E, N, data) é decidido por maioria.
+      const leituras=[p1], datas=[p1.dtFmt];
+      let reg=null;
+      try{
+        const alvo=String(p1.trecho||'').split(/\s+/).map(s=>s.replace(/[^0-9A-Za-z]/g,'')).filter(s=>s.length>=2);
+        const ws=(data.words||[]).filter(w=>{
+          const tx=String(w.text||'').replace(/[^0-9A-Za-z]/g,'');
+          return tx.length>=2 && alvo.some(a=>a.includes(tx)||tx.includes(a));
+        });
+        if(ws.length){
+          const bb={x0:Math.min(...ws.map(w=>w.bbox.x0)), x1:Math.max(...ws.map(w=>w.bbox.x1)),
+                    y0:Math.min(...ws.map(w=>w.bbox.y0)), y1:Math.max(...ws.map(w=>w.bbox.y1))};
+          const sc=Math.min(1, 1900/(t.r.w*bitmap.width)); // px do recorte por px da foto
+          const fx=v=>t.r.x + v/sc/bitmap.width, fy=v=>t.r.y + v/sc/bitmap.height;
+          const x0=fx(bb.x0), x1=fx(bb.x1), y0=fy(bb.y0), y1=fy(bb.y1), lh=y1-y0, cw=x1-x0;
+          // inclui a linha acima (data) e a de baixo; amplia para os dois lados
+          // (carimbos alinhados à direita ou à esquerda)
+          reg={x:Math.max(0,x0-cw*0.45), y:Math.max(0,y0-lh*1.7)};
+          reg.w=Math.min(1,x1+cw*0.45)-reg.x; reg.h=Math.min(1,y1+lh*1.4)-reg.y;
+        }
+      }catch(e){ reg=null; }
+      if(reg){
+        const variantes=[
+          {mode:'white', opts:{despeckle:true, pad:30, scale:0.6}, psm:'6'},
+          {mode:'white', opts:{despeckle:true, pad:30}, psm:'3'},
+        ];
+        for(const v of variantes){
+          try{
+            const d2=await ler(reg, v.mode, v.opts, v.psm);
+            const p2=parseStampText(d2.text||'');
+            if(p2) leituras.push(p2);
+            datas.push(parseStampDate(d2.text||''));
+          }catch(e){ /* leitura extra opcional */ }
+        }
+      }
+      await worker.setParameters({tessedit_pageseg_mode:'3'});
+
+      // ── Decisão por maioria ──
+      const zona=_maisFrequente(leituras.map(l=>l.zona)).valor;
+      const E=_maisFrequente(leituras.map(l=>String(l.E))), N=_maisFrequente(leituras.map(l=>String(l.N)));
+      const Ev=parseFloat(E.valor), Nv=parseFloat(N.valor);
+      // posição geográfica: de uma leitura idêntica ao resultado, ou recalculada
+      let base=leituras.find(l=>l.zona===zona && String(l.E)===E.valor && String(l.N)===N.valor);
+      let lat, lon;
+      if(base){ lat=base.lat; lon=base.lon; }
+      else{
+        const zm=String(zona).match(/^(\d{1,2})([A-Z])$/);
+        const g=zm ? utmToGeo(Ev, Nv, +zm[1], zm[2]) : null;
+        if(!g){ base=p1; lat=p1.lat; lon=p1.lon; } else { lat=g.lat; lon=g.lon; }
+      }
+      const concordam=leituras.filter(l=>l.zona===zona && String(l.E)===E.valor && String(l.N)===N.valor).length;
+      // Confiança: alta quando 2+ leituras independentes coincidem em todos os
+      // campos da coordenada; baixa quando houve apenas uma leitura válida ou
+      // as leituras divergiram (o usuário deve conferir com a foto).
+      const conf = concordam>=2 ? 'alta' : 'baixa';
+
+      // Data/hora: maioria entre as leituras; depois o nome do arquivo.
+      let dt=_maisFrequente(datas).valor||'';
+      const dtArq=dateFromFileName(file.name);
+      if(dtArq){
+        // O nome do arquivo é gerado pelo próprio app/câmera: prevalece quando
+        // a leitura da imagem divergir dele em data, hora ou minuto.
+        if(!dt || dt.slice(0,16)!==dtArq.slice(0,16)) dt=dtArq;
+      }
+      console.info(`[GeoTools] OCR "${file.name}": ${leituras.length} leitura(s), ${concordam} concordante(s) → ${zona} ${E.valor} ${N.valor} · confiança ${conf}`);
+      return {name:file.name, lat, lon, E:Ev, N:Nv, zona, alt:p1.alt||'', dtFmt:dt,
+              origem:'ocr', ocrConf:conf, ocrTexto:(base||p1).trecho};
+    }
+  }finally{
+    try{ bitmap.close(); }catch(e){}
+  }
+  return null;
+}
+
+// Data/hora impressa: "31/08/2026 6:09 PM", "31-08-2026 18:09:12",
+// "2026-08-31 18:09". Retorna "DD/MM/AAAA HH:MM:SS" ou ''.
+function parseStampDate(txt){
+  txt=String(txt||'').replace(/\s+/g,' ');
+  const ok=(d,mo,y,h,mi)=> +mo>=1 && +mo<=12 && +d>=1 && +d<=31 && +y>=1990 && +y<=2100 && +h<=23 && +mi<=59;
+  let m = txt.match(/(\d{2})[\/.\-](\d{2})[\/.\-](\d{4})[\s,]+(\d{1,2})[:h](\d{2})(?::(\d{2}))?\s*([AaPp])?\.?\s*[Mm]?/);
+  if(m){
+    let h=parseInt(m[4],10); const ap=(m[7]||'').toUpperCase();
+    if(ap==='P' && h<12) h+=12; if(ap==='A' && h===12) h=0;
+    if(ok(m[1],m[2],m[3],h,m[5])) return `${m[1]}/${m[2]}/${m[3]} ${String(h).padStart(2,'0')}:${m[5]}:${m[6]||'00'}`;
+  }
+  if((m = txt.match(/(\d{4})[\/.\-](\d{2})[\/.\-](\d{2})[\sT,]+(\d{1,2}):(\d{2})(?::(\d{2}))?/)) && ok(m[3],m[2],m[1],m[4],m[5])){
+    return `${m[3]}/${m[2]}/${m[1]} ${m[4].padStart(2,'0')}:${m[5]}:${m[6]||'00'}`;
+  }
+  return '';
+}
+// Data/hora a partir do NOME do arquivo — padrão de muitas câmeras e apps:
+// "IMG_20260831_164154.jpg", "TimePhoto_20260831_164154.jpg", "20260831-164154".
+function dateFromFileName(name){
+  const m=String(name||'').match(/(20\d{2})(\d{2})(\d{2})[_\-\s]?(\d{2})(\d{2})(\d{2})/);
+  if(!m) return '';
+  const [,y,mo,d,h,mi,s]=m;
+  if(+mo<1||+mo>12||+d<1||+d>31||+h>23||+mi>59||+s>59) return '';
+  return `${d}/${mo}/${y} ${h}:${mi}:${s}`;
+}
+
+// Interpreta o texto reconhecido e extrai a coordenada (UTM, graus decimais
+// ou graus/minutos/segundos) e a data/hora. Retorna null se nada for válido.
+function parseStampText(raw){
+  if(!raw) return null;
+  // Corrige confusões típicas do OCR SOMENTE em sequências numéricas
+  // (O→0, l/I→1, S→5, B→8, Z→2), preservando letras isoladas (hemisfério, zona).
+  const fixDigits = s => s.replace(/[0-9OoIlSBZ]{3,}(?:[.,][0-9OoIlSBZ]+)?/g, tok=>{
+    const nd=(tok.match(/\d/g)||[]).length;
+    if(nd < Math.ceil(tok.replace(/[.,]/g,'').length*0.6)) return tok; // é palavra, não número
+    return tok.replace(/[Oo]/g,'0').replace(/[Il]/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2');
+  });
+  const txt = fixDigits(String(raw).replace(/[|]/g,'1')).replace(/\s+/g,' ').trim();
+  const num = s => parseFloat(String(s).replace(',','.'));
+  const inBR = (lat,lon)=> lat>=-34.5 && lat<=6 && lon>=-74.5 && lon<=-28.5;
+
+  const dtFmt=parseStampDate(txt);
+  let m;
+  let alt='';
+  const ma = txt.match(/(?:alt(?:itude)?|elev(?:a[cç][aã]o)?)\s*[:=]?\s*(-?\d{1,4}(?:[.,]\d+)?)\s*m\b/i);
+  if(ma) alt=num(ma[1]).toFixed(1);
+
+  const out = (lat,lon,E,N,zona,trecho)=>({lat:+lat.toFixed(8),lon:+lon.toFixed(8),E,N,zona,dtFmt,alt,trecho});
+
+  // 1) UTM com zona: "22M 344141 9921636", "22 M 344141mE 9921636mN",
+  //    "Zona 23K E: 627657 N: 7740219"
+  const reUTM = /\b(\d{1,2})\s?([C-HJ-NP-X])\b[\s,;:]*(?:E\s*[:=]?\s*)?(\d{6}(?:[.,]\d{1,3})?)\s*(?:m\s*E|mE|E)?[\s,;:]+(?:N\s*[:=]?\s*)?(\d{7}(?:[.,]\d{1,3})?)/i;
+  //    variante com a zona depois: "E 344141 N 9921636 22M"
+  const reUTM2 = /\bE\s*[:=]?\s*(\d{6}(?:[.,]\d{1,3})?)\s*m?[\s,;]+N\s*[:=]?\s*(\d{7}(?:[.,]\d{1,3})?)\s*m?[\s,;]+(?:zona|fuso|zone)?\s*[:=]?\s*(\d{1,2})\s?([C-HJ-NP-X])\b/i;
+  let u = txt.match(reUTM), E,N,zone,letter,trecho;
+  if(u){ zone=+u[1]; letter=u[2].toUpperCase(); E=num(u[3]); N=num(u[4]); trecho=u[0]; }
+  else if((u=txt.match(reUTM2))){ E=num(u[1]); N=num(u[2]); zone=+u[3]; letter=u[4].toUpperCase(); trecho=u[0]; }
+  if(u && zone>=1 && zone<=60 && E>=100000 && E<=900000 && N>=0 && N<=10000000){
+    let geo=utmToGeo(E,N,zone,letter);
+    // Hemisfério: letra trocada pelo OCR (ex.: M→N) colocaria o ponto no
+    // hemisfério errado. Se só a alternativa cair no Brasil, usa-a.
+    if(geo && !inBR(geo.lat,geo.lon)){
+      const alt2 = utmToGeo(E,N,zone, 'CDEFGHJKLM'.includes(letter)?'N':'M');
+      if(alt2 && inBR(alt2.lat,alt2.lon)){ geo=alt2; letter = 'CDEFGHJKLM'.includes(letter)?'N':'M'; }
+    }
+    if(geo && isFinite(geo.lat) && isFinite(geo.lon)){
+      return out(geo.lat, geo.lon, E, N, `${zone}${letter}`, trecho);
+    }
+  }
+
+  // Converte lat/lon em ponto de saída (calcula UTM)
+  const fromLatLon = (lat,lon,trecho)=>{
+    if(!isFinite(lat)||!isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180) return null;
+    const ut=geoToUTM(lat,lon);
+    return out(lat,lon,ut.E,ut.N,`${ut.zone}${ut.letter}`,trecho);
+  };
+  const sgn = (v,h)=> (h && /[SWO]/i.test(h)) ? -Math.abs(v) : v;
+
+  // 2) Graus/minutos/segundos: 20°29'35.8"S 43°46'19.5"W (O/L em português)
+  const reDMS = /(\d{1,2})\s*[°ºo*]\s*(\d{1,2})\s*['’′`]\s*(\d{1,2}(?:[.,]\d+)?)\s*(?:["”″]|'')?\s*([NS])[\s,;\/]+(\d{1,3})\s*[°ºo*]\s*(\d{1,2})\s*['’′`]\s*(\d{1,2}(?:[.,]\d+)?)\s*(?:["”″]|'')?\s*([EWOL])/i;
+  if((m = txt.match(reDMS))){
+    const lat = sgn(+m[1] + +m[2]/60 + num(m[3])/3600, m[4]);
+    const lon = sgn(+m[5] + +m[6]/60 + num(m[7])/3600, m[8]);
+    const r = fromLatLon(lat,lon,m[0]); if(r) return r;
+  }
+
+  // 3) Graus decimais: "-20.493272, -43.772080", "Lat -20.4932 Long -43.7720",
+  //    "20.4932°S 43.7720°W"
+  const reDec = /(?:lat\w*\.?\s*[:=]?\s*)?(-?\d{1,2}[.,]\d{4,8})\s*[°º]?\s*([NS])?[\s,;\/]+(?:lo?ng?\w*\.?\s*[:=]?\s*)?(-?\d{1,3}[.,]\d{4,8})\s*[°º]?\s*([EWOL])?/i;
+  if((m = txt.match(reDec))){
+    const lat = sgn(num(m[1]), m[2]), lon = sgn(num(m[3]), m[4]);
+    const r = fromLatLon(lat,lon,m[0]); if(r) return r;
+  }
+  return null;
 }
 function dms2dec(dms,ref){
   if(!dms||dms.length<3)return null;
@@ -4521,30 +5872,242 @@ function dms2dec(dms,ref){
   let d=f(dms[0])+f(dms[1])/60+f(dms[2])/3600;
   if(ref==='S'||ref==='W')d=-d;return+d.toFixed(8);
 }
-function showExtResults(withGPS,withoutGPS){
+function showExtResults(withGPS,withoutGPS,viaOCR){
   document.getElementById('ext-upload-panel').style.display='none';
   document.getElementById('ext-split').style.display='flex';
   document.getElementById('ext-cnt-ok').textContent=withGPS;
   document.getElementById('ext-cnt-warn').textContent=withoutGPS;
+  // Fotos cuja posição foi lida do texto impresso na imagem (OCR)
+  const ocrChip=document.getElementById('ext-chip-ocr');
+  if(ocrChip){
+    ocrChip.style.display = viaOCR ? '' : 'none';
+    const n=document.getElementById('ext-cnt-ocr'); if(n) n.textContent=viaOCR||0;
+  }
   document.getElementById('ext-total-lbl').textContent=`${withGPS} pts`;
   buildMap('map-ext','ext');
   setTimeout(()=>{
     const tbody=document.getElementById('ext-tbody');tbody.innerHTML='';const bounds=[];
     extData.forEach((r,i)=>{
       const tr=document.createElement('tr');
-      tr.innerHTML=`<td class="td-link"><input type="checkbox" class="pt-link-cb" title="Ligar este ponto" onclick="event.stopPropagation()" onchange="togglePointLink('ext',${i},this)"></td><td>${i+1}</td><td class="fname-cell" title="${escHtml(r.name)}">${escHtml(r.name)}</td><td><span class="zona-pill" style="font-size:10px;padding:1px 5px">${escHtml(r.zona)}</span></td><td style="font-size:11px">${r.E.toLocaleString('pt-BR',{maximumFractionDigits:0})}</td><td style="font-size:11px">${r.N.toLocaleString('pt-BR',{maximumFractionDigits:0})}</td><td style="font-size:11px;text-align:right">${r.alt!==''?escHtml(r.alt)+'m':'—'}</td><td style="font-size:11px;white-space:nowrap">${escHtml(r.dtFmt)||'—'}</td>`;
+      tr.dataset.idx=i; tr.innerHTML=_extRowCells(r,i);
       tr.addEventListener('click',()=>{
         document.querySelectorAll('#ext-tbody tr').forEach(t=>t.classList.remove('selected'));
         tr.classList.add('selected');
         if(maps.ext)maps.ext.setView([r.lat,r.lon],15);
         if(mkrs.ext[i])mkrs.ext[i].openPopup();
       });
-      tbody.appendChild(tr);addMarker('ext',r.lat,r.lon,r.name,i+1);bounds.push([r.lat,r.lon]);
+      tbody.appendChild(tr);addMarker('ext',r.lat,r.lon,_extMarkerLabel(r),i+1);bounds.push([r.lat,r.lon]);
     });
     fitMap('ext',bounds);
   },300);
 }
+// ── Células da linha da tabela de fotos ──
+function _extRowCells(r,i){
+  let badge='', dica='';
+  if(r.origem==='ocr'){
+    if(r.editado){
+      dica=' — coordenada lida da foto e corrigida manualmente';
+    }else if(r.ocrConf==='alta'){
+      badge='<span class="ocr-badge" title="Coordenada lida do texto impresso na foto (OCR), confirmada por leituras repetidas">🔎</span>';
+      dica=' — coordenada lida do texto impresso na foto (OCR): confira';
+    }else{
+      badge='<span class="ocr-badge ocr-low" title="Coordenada lida do texto impresso na foto (OCR) com leituras divergentes — confira com a foto">⚠️🔎</span>';
+      dica=' — coordenada lida do texto impresso na foto (OCR) com leituras divergentes: confira';
+    }
+  }
+  const editBtn = r.origem==='ocr'
+    ? `<button type="button" class="ext-edit-btn${r.editado?' is-edited':''}" title="${r.editado?'Corrigida manualmente — clique para rever ou restaurar a leitura original':'Editar zona, coordenadas, altitude e data/hora lidas da foto'}" aria-label="Editar dados lidos da foto ${escHtml(r.name)}" onclick="event.stopPropagation();openExtEditor(${i})">✏️</button>`
+    : '';
+  const fmt0=v=>Number(v).toLocaleString('pt-BR',{maximumFractionDigits:0});
+  return `<td class="td-link"><input type="checkbox" class="pt-link-cb" title="Ligar este ponto" onclick="event.stopPropagation()" onchange="togglePointLink('ext',${i},this)"${pointLinkSel.ext.includes(i)?' checked':''}></td>`
+    + `<td>${i+1}</td>`
+    + `<td class="fname-cell${r.origem==='ocr'?' fname-ocr':''}" title="${escHtml(r.name)}${dica}"><div class="fname-wrap">${editBtn}${badge}<span class="fname-txt">${escHtml(r.name)}</span></div></td>`
+    + `<td><span class="zona-pill" style="font-size:10px;padding:1px 5px">${escHtml(r.zona)}</span></td>`
+    + `<td style="font-size:11px">${fmt0(r.E)}</td><td style="font-size:11px">${fmt0(r.N)}</td>`
+    + `<td style="font-size:11px;text-align:right">${r.alt!==''&&r.alt!=null?escHtml(r.alt)+'m':'—'}</td>`
+    + `<td style="font-size:11px;white-space:nowrap">${escHtml(r.dtFmt)||'—'}</td>`;
+}
+function _extMarkerLabel(r){
+  if(r.origem!=='ocr') return r.name;
+  return r.editado ? `${r.name} (coordenada corrigida manualmente)` : `${r.name} (coordenada lida da imagem — confira)`;
+}
+
+// ════════════════════════════════════════
+//  EDITOR DOS DADOS LIDOS DA FOTO (OCR)
+// ════════════════════════════════════════
+// Permite corrigir zona, E, N, altitude e data/hora de uma foto cuja posição foi
+// lida do texto impresso na imagem. A foto é exibida ao lado para conferência;
+// ao salvar, a tabela, o marcador (posição e popup), a ligação de pontos e a
+// exportação passam a usar os valores corrigidos.
+let _extEd=null; // {i, url, overlay, onKey}
+function openExtEditor(i){
+  const r=extData[i]; if(!r) return;
+  closeExtEditor();
+  const zm=String(r.zona||'').toUpperCase().match(/^(\d{1,2})\s*([C-HJ-NP-X])?$/);
+  const fuso=zm?zm[1]:'', letra=zm&&zm[2]?zm[2]:'';
+  const url = r.file ? URL.createObjectURL(r.file) : null;
+  const ov=document.createElement('div');
+  ov.className='track-modal-overlay';
+  ov.innerHTML=`
+    <div class="track-modal ext-edit-modal" role="dialog" aria-modal="true" aria-labelledby="exted-title">
+      <div class="track-modal-hdr">
+        <span class="track-modal-title" id="exted-title">✏️ Editar dados lidos da foto</span>
+        <button type="button" class="track-modal-close" aria-label="Fechar" onclick="closeExtEditor()">✕</button>
+      </div>
+      <div class="track-modal-file">#${i+1} · ${escHtml(r.name)}${r.editado?' · <b>corrigida manualmente</b>':''}</div>
+      <div class="exted-body">
+        ${url?`<div class="exted-photo">
+          <div class="exted-img-wrap" id="exted-imgwrap"><img src="${url}" alt="Foto ${escHtml(r.name)}" id="exted-img"></div>
+          <div class="exted-photo-bar">
+            <button type="button" class="btn btn-sm" id="exted-zoom" onclick="toggleExtEditorZoom()">🔍 Ampliar</button>
+            <span>Confira os valores com o texto impresso na foto.</span>
+          </div>
+        </div>`:''}
+        <div class="exted-form">
+          <div class="exted-row">
+            <label>Fuso (Nº)<input type="number" min="1" max="60" id="exted-fuso" value="${escHtml(fuso)}"></label>
+            <label>Zona (Letra)<select id="exted-letra"><option value="">--</option>${letraOpts()}</select></label>
+          </div>
+          <label>Este (E) — m<input type="text" inputmode="decimal" id="exted-e" value="${_edNum(r.E)}"></label>
+          <label>Norte (N) — m<input type="text" inputmode="decimal" id="exted-n" value="${_edNum(r.N)}"></label>
+          <div class="exted-row">
+            <label>Altitude (m)<input type="text" inputmode="decimal" id="exted-alt" value="${r.alt!==''&&r.alt!=null?escHtml(String(r.alt)):''}" placeholder="opcional"></label>
+            <label>Data/Hora<input type="text" id="exted-dt" value="${escHtml(r.dtFmt||'')}" placeholder="dd/mm/aaaa hh:mm:ss"></label>
+          </div>
+          <div class="exted-preview" id="exted-preview" aria-live="polite"></div>
+          ${r.ocrTexto?`<details class="exted-ocr"><summary>Texto lido pelo OCR</summary><pre>${escHtml(r.ocrTexto)}</pre></details>`:''}
+        </div>
+      </div>
+      <div class="exted-actions">
+        ${r._orig?'<button type="button" class="btn btn-sm" onclick="restoreExtEditor()" title="Volta aos valores lidos originalmente da foto">↺ Restaurar leitura original</button>':'<span></span>'}
+        <div class="exted-actions-r">
+          <button type="button" class="btn btn-sm" onclick="closeExtEditor()">Cancelar</button>
+          <button type="button" class="btn btn-primary btn-sm" id="exted-save" onclick="saveExtEditor()">💾 Salvar e atualizar mapa</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const sel=ov.querySelector('#exted-letra'); if(letra) sel.value=letra;
+  ov.addEventListener('mousedown',e=>{ if(e.target===ov) closeExtEditor(); });
+  const onKey=e=>{
+    if(e.key==='Escape'){ e.preventDefault(); closeExtEditor(); }
+    else if(e.key==='Enter' && e.target && e.target.tagName==='INPUT'){ e.preventDefault(); saveExtEditor(); }
+  };
+  document.addEventListener('keydown',onKey);
+  ['exted-fuso','exted-letra','exted-e','exted-n'].forEach(id=>{
+    const el=ov.querySelector('#'+id); el.addEventListener('input',_extEditorPreview); el.addEventListener('change',_extEditorPreview);
+  });
+  _extEd={i,url,overlay:ov,onKey};
+  _extEditorPreview();
+  setTimeout(()=>{ const f=ov.querySelector('#exted-e'); if(f){ f.focus(); f.select(); } },30);
+}
+function _edNum(v){ return (v===''||v==null||!isFinite(+v)) ? '' : String(+(+v).toFixed(2)).replace('.',','); }
+function _parseNumBR(s){
+  s=String(s==null?'':s).trim().replace(/\s/g,'');
+  if(!s) return NaN;
+  // aceita "362117,5", "362.117,5", "362117.5" e "9.938.166"
+  if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.');
+  else if((s.match(/\./g)||[]).length>1 || /^\d{1,3}(\.\d{3})+$/.test(s) && s.replace(/\./g,'').length>=6) s=s.replace(/\./g,'');
+  return /^-?\d+(\.\d+)?$/.test(s) ? parseFloat(s) : NaN;
+}
+function toggleExtEditorZoom(){
+  const w=document.getElementById('exted-imgwrap'), b=document.getElementById('exted-zoom'); if(!w) return;
+  const on=w.classList.toggle('zoom');
+  if(b) b.textContent = on ? '🔍 Reduzir' : '🔍 Ampliar';
+  // carimbos costumam ficar no canto inferior direito: posiciona a vista lá
+  if(on) setTimeout(()=>{ w.scrollTop=w.scrollHeight; w.scrollLeft=w.scrollWidth; },20);
+}
+// Valida os campos; retorna {ok, erros[], vals}
+function _extEditorRead(){
+  const g=id=>document.getElementById(id);
+  const fuso=parseInt(g('exted-fuso').value,10), letra=(g('exted-letra').value||'').toUpperCase();
+  const E=_parseNumBR(g('exted-e').value), N=_parseNumBR(g('exted-n').value);
+  const altTxt=g('exted-alt').value.trim(), alt=altTxt===''?'':_parseNumBR(altTxt);
+  const dt=g('exted-dt').value.trim().replace(/\s+/g,' ');
+  const erros=[];
+  if(!(fuso>=1&&fuso<=60)) erros.push('Fuso deve estar entre 1 e 60.');
+  if(!letra) erros.push('Selecione a letra da zona (ex.: M, L, K).');
+  if(!isFinite(E)) erros.push('Este (E) inválido.');
+  else if(E<100000||E>900000) erros.push('Este (E) fora da faixa UTM (100.000 a 900.000 m).');
+  if(!isFinite(N)) erros.push('Norte (N) inválido.');
+  else if(N<0||N>10000000) erros.push('Norte (N) fora da faixa UTM (0 a 10.000.000 m).');
+  if(altTxt!=='' && !isFinite(alt)) erros.push('Altitude inválida (use apenas números).');
+  if(dt && !/^\d{2}\/\d{2}\/\d{4}(\s\d{1,2}:\d{2}(:\d{2})?)?$/.test(dt)) erros.push('Data/hora no formato dd/mm/aaaa hh:mm:ss.');
+  let geo=null;
+  if(!erros.length){ geo=utmToGeo(E,N,fuso,letra); if(!geo||!isFinite(geo.lat)||!isFinite(geo.lon)) erros.push('Não foi possível converter a coordenada.'); }
+  return {ok:!erros.length, erros, vals:{fuso,letra,E,N,alt:altTxt===''?'':String(+alt),dt,geo}};
+}
+function _extEditorPreview(){
+  const box=document.getElementById('exted-preview'); if(!box) return;
+  const {ok,erros,vals}=_extEditorRead();
+  const r=extData[_extEd?_extEd.i:-1];
+  if(!ok){ box.className='exted-preview err'; box.innerHTML=erros.map(e=>'⚠️ '+escHtml(e)).join('<br>'); return; }
+  const {geo}=vals;
+  let html=`<b>Lat/Long:</b> ${geo.lat.toFixed(6)}, ${geo.lon.toFixed(6)}`;
+  // distância do ponto original — ajuda a perceber erros de digitação
+  if(r && isFinite(r.lat)){
+    const d=L.latLng(r.lat,r.lon).distanceTo([geo.lat,geo.lon]);
+    if(d>=0.5) html+=`<br>Deslocamento em relação ao valor atual: <b>${d<1000?d.toFixed(0)+' m':(d/1000).toLocaleString('pt-BR',{maximumFractionDigits:2})+' km'}</b>`;
+  }
+  const foraBR = geo.lat<-34.5||geo.lat>5.5||geo.lon<-74.5||geo.lon>-28.5;
+  if(foraBR) html+='<br>⚠️ O ponto fica fora do território brasileiro — confira o fuso, a letra e o Norte (N).';
+  box.className='exted-preview'+(foraBR?' warn':'');
+  box.innerHTML=html;
+}
+function saveExtEditor(){
+  if(!_extEd) return;
+  const {ok,erros,vals}=_extEditorRead();
+  if(!ok){ _extEditorPreview(); const b=document.getElementById('exted-preview'); if(b){ b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); } return; }
+  const i=_extEd.i, r=extData[i]; if(!r){ closeExtEditor(); return; }
+  if(!r._orig) r._orig={lat:r.lat,lon:r.lon,E:r.E,N:r.N,zona:r.zona,alt:r.alt,dtFmt:r.dtFmt};
+  const zona=`${vals.fuso}${vals.letra}`;
+  Object.assign(r,{E:vals.E,N:vals.N,zona,lat:vals.geo.lat,lon:vals.geo.lon,alt:vals.alt,dtFmt:vals.dt});
+  const o=r._orig;
+  r.editado = !(o.E===r.E && o.N===r.N && o.zona===r.zona && String(o.alt)===String(r.alt) && (o.dtFmt||'')===(r.dtFmt||''));
+  if(!r.editado) delete r._orig;
+  closeExtEditor();
+  _applyExtRowUpdate(i);
+}
+function restoreExtEditor(){
+  if(!_extEd) return;
+  const i=_extEd.i, r=extData[i]; if(!r||!r._orig) return;
+  Object.assign(r,r._orig); delete r._orig; r.editado=false;
+  closeExtEditor();
+  _applyExtRowUpdate(i);
+}
+// Atualiza tabela, marcador, ligação de pontos e enquadramento após a edição
+function _applyExtRowUpdate(i){
+  const r=extData[i];
+  const tr=document.querySelector(`#ext-tbody tr[data-idx="${i}"]`);
+  if(tr){
+    tr.innerHTML=_extRowCells(r,i);
+    tr.classList.remove('row-updated'); void tr.offsetWidth; tr.classList.add('row-updated');
+  }
+  const mk=mkrs.ext[i];
+  if(mk){
+    mk.setLatLng([r.lat,r.lon]);
+    mk.setPopupContent(_markerPopupHtml(_extMarkerLabel(r), r.lat, r.lon));
+  }
+  redrawPointLink('ext');
+  updateDistButton('ext');
+  const m=maps.ext;
+  if(m && mk){
+    if(!m.getBounds().pad(-0.05).contains([r.lat,r.lon])) m.setView([r.lat,r.lon], Math.max(m.getZoom(),15));
+    setTimeout(()=>{ try{ mk.openPopup(); }catch(e){} },250);
+  }
+  const n=extData.filter(x=>x.editado).length;
+  console.info(`[GeoTools] Foto "${r.name}" ${r.editado?'corrigida':'restaurada'} → ${r.zona} ${r.E} ${r.N} (${n} foto(s) corrigida(s))`);
+}
+function closeExtEditor(){
+  if(!_extEd) return;
+  document.removeEventListener('keydown',_extEd.onKey);
+  try{ _extEd.overlay.remove(); }catch(e){}
+  const url=_extEd.url; if(url) setTimeout(()=>URL.revokeObjectURL(url),0);
+  _extEd=null;
+}
+
 function clearExtrair(){
+  closeExtEditor();
   extData=[];resetPointLink('ext');clearMarkers('ext');
   clearUploadedLayers('ext');
   if(typeof clearMeasure==='function') clearMeasure('ext');
@@ -4583,7 +6146,7 @@ function saveInformar(){
     const nm=document.getElementById(`inf-nm-${i}`).value.trim()||`Ponto ${i}`;
     if(isNaN(E)||isNaN(N)||!Z)continue;
     const geo=utmToGeo(E,N,Z,L);if(!geo)continue;
-    found++;infData.push({name:nm,lat:geo.lat,lon:geo.lon});
+    found++;infData.push({name:nm,lat:geo.lat,lon:geo.lon,E,N,zona:`${Z}${L}`});
     const tr=document.createElement('tr');tr.dataset.idx=found-1;
     tr.innerHTML=`<td class="td-link"><input type="checkbox" class="pt-link-cb" title="Ligar este ponto" onclick="event.stopPropagation()" onchange="togglePointLink('inf',${found-1},this)"></td><td>${found}</td><td>${escHtml(nm)}</td><td><span class="zona-pill">${escHtml(Z)}${escHtml(L)}</span></td><td style="font-size:11px">${E.toLocaleString('pt-BR',{maximumFractionDigits:1})}</td><td style="font-size:11px">${N.toLocaleString('pt-BR',{maximumFractionDigits:1})}</td>`;
     document.getElementById('inf-tbody').appendChild(tr);
