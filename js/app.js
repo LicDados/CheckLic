@@ -745,6 +745,7 @@ function buildMap(divId, key) {
       'DPHDM:fernando_de_noronha_naufragios','DPHDM:ar_naufragios','DPHDM:ilha_da_trindade_naufragios',
       'DPHDM:rs_principal_shp',
     ].join(',')},
+
     {nome:'ANM - Mineração (SIGMINE)', url:'https://geo.anm.gov.br/arcgis/services/SIGMINE/dados_anm/MapServer/WMSServer', layer:'0,1,2,3,4', tipo:'poligono', corsBlocked:true, noJsonp:true, htmlOnly:true, version:'1.1.1', gfiSrs:'EPSG:4326', arcgisRest:'https://geo.anm.gov.br/arcgis/rest/services/SIGMINE/dados_anm/MapServer', arcgisLayers:'0,1,2,3,4', clickTolerance:5},
     {nome:'ANEEL - Energia (SIGEL)',   url:'https://sigel.aneel.gov.br/arcgis/services/PORTAL/WFS/MapServer/WMSServer', layer:'1,2,3,6,7,8,9,10,12,13,14,15', tipo:'misto', corsBlocked:true, noJsonp:true, htmlOnly:true, version:'1.1.1', gfiSrs:'EPSG:4326', clickTolerance:6, arcgisRest:'https://sigel.aneel.gov.br/arcgis/rest/services/PORTAL/WFS/MapServer', arcgisLayers:'0,1,2,3,5,6,7,8,9,12,13,14', excludeNames:'atua\u00e7\u00e3o das distribuidoras|distribuidora por|reservat\u00f3rio na', layerNames:{0:'Aerogeradores',1:'Central Geradora E\u00f3lica',2:'Central Geradora Solar Fotovoltaica',3:'Usina Termel\u00e9trica',5:'Usina Termonuclear',6:'Central Geradora Hidrel\u00e9trica',7:'Pequena Central Hidrel\u00e9trica',8:'Usina Hidrel\u00e9trica',9:'Linha de Transmiss\u00e3o de EOL',12:'Parque E\u00f3lico',13:'Arranjo Geral da AHE',14:'Declara\u00e7\u00e3o de Utilidade P\u00fablica'}},
   ];
@@ -761,7 +762,28 @@ function buildMap(divId, key) {
     {nome:'IBGE - Hipsometria 2022', url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CGEO:andb2022_021801', tipo:'poligono'},          
     {nome:'IBGE - Geologia', url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:Geologia_area_Brasil', tipo:'poligono'},
     {nome:'IBGE - Relevo', url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:geomorfologia_5000', tipo:'poligono'},    
-    {nome:'IBGE - Vegetação', url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:vegetacao_area_brasil', tipo:'poligono'},     
+    {nome:'IBGE - Solos', url:'https://geoservicos.ibge.gov.br/geoserver/ows', tipo:'poligono', layer:[
+      'CREN:PedologiaSA23','CREN:PedologiaSA24','CREN:PedologiaSB23','CREN:PedologiaSB24',
+      'CREN:PedologiaSB25','CREN:PedologiaSC23','CREN:PedologiaSD22','CREN:PedologiaSD23',
+      'CREN:PedologiaSD24','CREN:PedologiaSE22','CREN:PedologiaSE23','CREN:PedologiaSE24',
+      'CREN:PedologiaSF21','CREN:PedologiaSF23','CREN:PedologiaSF24','CREN:PedologiaSG22',
+      'CREN:PedologiaSG23','CREN:PedologiaSH21','CREN:PedologiaSH22',
+      'CREN:PedologiaSI22', 'CREN:PD_ORDEM',
+    ].join(',')},
+    {nome:'IBGE - Vegetação', url:'https://geoservicos.ibge.gov.br/geoserver/ows', layer:'CREN:vegetacao_area_brasil', tipo:'poligono'},
+    {nome:'CPRM/SGB - Litologia', url:'https://geoservicos.sgb.gov.br/geoserver/geologia/ows/', tipo:'poligono', layer:[
+      'na19_lito_1m','na20_lito_1m','na21_lito_1m','na22_lito_1m',
+      'sa19_lito_1m','sa20_lito_1m','sa21_lito_1m','sa22_lito_1m','sa23_lito_1m',
+      'sa24_lito_1m','sb18_lito_1m','sb19_lito_1m','sb20_lito_1m','sb21_lito_1m',
+      'sb22_lito_1m','sb23_lito_1m','sb24_lito_1m','sb25_lito_1m',
+      'sc18_lito_1m','sc19_lito_1m','sc20_lito_1m','sc21_lito_1m',
+      'sc22_lito_1m','sc23_lito_1m','sc24_lito_1m','sc25_lito_1m',
+      'sd20_lito_1m','sd21_lito_1m','sd22_lito_1m','sd23_lito_1m',
+      'sd24_lito_1m','se21_lito_1m','se22_lito_1m','se23_lito_1m',
+      'se24_lito_1m','sf21_lito_1m','sf22_lito_1m','sf23_lito_1m',
+      'sf24_lito_1m','sg21_lito_1m','sg22_lito_1m','sg23_lito_1m',
+      'sh21_lito_1m','sh22_lito_1m','si22_lito_1m',
+    ].join(',')},  
   ];
 
   // Panes por tipologia — garantem que camadas do tipo LINHA sempre fiquem
@@ -890,7 +912,7 @@ function buildMap(divId, key) {
     { nome:'ICMBio', re:/^ICMBio\b/i },
     { nome:'FUNAI',  re:/^FUNAI\b/i },
     { nome:'EB/DSG', re:/^EB\/DSG\b/i },
-    { nome:'Outros', re:/^(ANA|VALEC|DNIT|SNIF\/SFB|DPHDM\/Marinha|ANM|ANEEL)\b/i },
+    { nome:'Outros', re:/^(ANA|VALEC|DNIT|SNIF\/SFB|DPHDM\/Marinha|ANM|ANEEL|CPRM\/SGB)\b/i },
   ];
   function groupStdOverlays(){
     const container = layersControl.getContainer();
